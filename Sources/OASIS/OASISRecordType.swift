@@ -1,0 +1,37 @@
+public enum OASISRecordType: UInt8, Sendable {
+    case pad           = 0
+    case start         = 1
+    case end           = 2
+    case cellname      = 3
+    case cellnameRef   = 4
+    case textstring    = 5
+    case textstringRef = 6
+    case propname      = 7
+    case propnameRef   = 8
+    case propstring    = 9
+    case propstringRef = 10
+    case layername     = 11
+    case layernameText = 12
+    case cell          = 13
+    case cellRef       = 14
+    case xyAbsolute    = 15
+    case xyRelative    = 16
+    case placement     = 17
+    case placementT    = 18
+    case text          = 19
+    case rectangle     = 20
+    case polygon       = 21
+    case path          = 22
+    case trapezoid     = 23
+    case trapezoidA    = 24
+    case trapezoidB    = 25
+    case ctrapezoid    = 26
+    case circle        = 27
+    case property      = 28
+    case propertyRepeat = 29
+    case xname         = 30
+    case xnameRef      = 31
+    case xelement      = 32
+    case xgeometry     = 33
+    case cblock        = 34
+}
