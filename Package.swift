@@ -37,5 +37,9 @@ let package = Package(
         .testTarget(name: "DEFTests", dependencies: ["DEF", "LayoutIR"]),
         .testTarget(name: "DXFTests", dependencies: ["DXF", "LayoutIR"]),
         .testTarget(name: "GeometryOpsTests", dependencies: ["GeometryOps", "LayoutIR"]),
+        .testTarget(
+            name: "GoldenCorpusTests",
+            dependencies: ["LayoutIR", "GDSII", "OASIS", "LEF", "DEF", "FormatDetector"]
+        ),
     ]
 )
