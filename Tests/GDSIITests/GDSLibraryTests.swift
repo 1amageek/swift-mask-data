@@ -364,6 +364,36 @@ struct GDSLibraryReaderTests {
         #expect(abs(result.units.dbuPerMicron - 500.0) < 1e-6)
     }
 
+    @Test func readWritePreservesGDSTimestamps() throws {
+        let libraryCreatedAt = IRDateTime(year: 2024, month: 2, day: 3, hour: 4, minute: 5, second: 6)
+        let libraryModifiedAt = IRDateTime(year: 2025, month: 7, day: 8, hour: 9, minute: 10, second: 11)
+        let cellCreatedAt = IRDateTime(year: 2023, month: 1, day: 2, hour: 3, minute: 4, second: 5)
+        let cellModifiedAt = IRDateTime(year: 2026, month: 6, day: 7, hour: 8, minute: 9, second: 10)
+        let original = IRLibrary(
+            name: "TIMELIB",
+            units: .default,
+            cells: [
+                IRCell(
+                    name: "TOP",
+                    createdAt: cellCreatedAt,
+                    modifiedAt: cellModifiedAt
+                )
+            ],
+            createdAt: libraryCreatedAt,
+            modifiedAt: libraryModifiedAt
+        )
+
+        let data = try GDSLibraryWriter.write(original)
+        let result = try GDSLibraryReader.read(data)
+        let rewritten = try GDSLibraryWriter.write(result)
+
+        #expect(result.createdAt == libraryCreatedAt)
+        #expect(result.modifiedAt == libraryModifiedAt)
+        #expect(result.cells.first?.createdAt == cellCreatedAt)
+        #expect(result.cells.first?.modifiedAt == cellModifiedAt)
+        #expect(rewritten == data)
+    }
+
     @Test func readMixedElementsRoundTrip() throws {
         let cell = IRCell(name: "MIX", elements: [
             .boundary(IRBoundary(

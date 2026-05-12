@@ -11,8 +11,9 @@ public enum GDSLibraryWriter {
         w.writeInt16(.header, values: [600])
 
         // BGNLIB (creation + modification timestamps, 12 int16s)
-        let ts = currentTimestamp()
-        w.writeInt16(.bgnlib, values: ts + ts)
+        let createdAt = library.createdAt ?? currentTimestamp()
+        let modifiedAt = library.modifiedAt ?? createdAt
+        w.writeInt16(.bgnlib, values: createdAt.gdsValues + modifiedAt.gdsValues)
 
         // LIBNAME
         try w.writeString(.libname, value: library.name)
@@ -37,8 +38,9 @@ public enum GDSLibraryWriter {
     // MARK: - Cell
 
     private static func writeCell(_ w: inout GDSRecordWriter, _ cell: IRCell) throws {
-        let ts = currentTimestamp()
-        w.writeInt16(.bgnstr, values: ts + ts)
+        let createdAt = cell.createdAt ?? currentTimestamp()
+        let modifiedAt = cell.modifiedAt ?? createdAt
+        w.writeInt16(.bgnstr, values: createdAt.gdsValues + modifiedAt.gdsValues)
         try w.writeString(.strname, value: cell.name)
 
         for element in cell.elements {
@@ -154,9 +156,17 @@ public enum GDSLibraryWriter {
 
     // MARK: - Timestamp
 
-    private static func currentTimestamp() -> [Int16] {
-        // Return a fixed timestamp for deterministic output
-        // Year, Month, Day, Hour, Minute, Second
-        return [2026, 1, 1, 0, 0, 0]
+    private static func currentTimestamp() -> IRDateTime {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(secondsFromGMT: 0) ?? .gmt
+        let components = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: Date())
+        return IRDateTime(
+            year: Int16(components.year ?? 0),
+            month: Int16(components.month ?? 0),
+            day: Int16(components.day ?? 0),
+            hour: Int16(components.hour ?? 0),
+            minute: Int16(components.minute ?? 0),
+            second: Int16(components.second ?? 0)
+        )
     }
 }

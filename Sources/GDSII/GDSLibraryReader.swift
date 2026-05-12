@@ -23,6 +23,7 @@ public enum GDSLibraryReader {
         guard bgnlib.recordType == .bgnlib else {
             throw GDSError.unexpectedRecord(got: bgnlib.recordType, expected: .bgnlib, offset: r.currentOffset)
         }
+        let libraryTimestamps = timestamps(from: bgnlib)
 
         // LIBNAME
         let libnameRec = try r.readRecord()
@@ -69,14 +70,21 @@ public enum GDSLibraryReader {
             }
         }
 
-        return IRLibrary(name: libName, units: units, cells: cells)
+        return IRLibrary(
+            name: libName,
+            units: units,
+            cells: cells,
+            createdAt: libraryTimestamps.createdAt,
+            modifiedAt: libraryTimestamps.modifiedAt
+        )
     }
 
     // MARK: - Cell
 
     private static func readCell(_ r: inout GDSRecordReader, options: GDSReadOptions) throws -> IRCell {
         // BGNSTR
-        _ = try r.readRecord()
+        let bgnstr = try r.readRecord()
+        let cellTimestamps = timestamps(from: bgnstr)
 
         // STRNAME
         let nameRec = try r.readRecord()
@@ -100,7 +108,35 @@ public enum GDSLibraryReader {
             }
         }
 
-        return IRCell(name: cellName, elements: elements)
+        return IRCell(
+            name: cellName,
+            elements: elements,
+            createdAt: cellTimestamps.createdAt,
+            modifiedAt: cellTimestamps.modifiedAt
+        )
+    }
+
+    private static func timestamps(from record: GDSRecord) -> (createdAt: IRDateTime?, modifiedAt: IRDateTime?) {
+        guard case .int16(let values) = record.payload, values.count >= 12 else {
+            return (nil, nil)
+        }
+        let createdAt = IRDateTime(
+            year: values[0],
+            month: values[1],
+            day: values[2],
+            hour: values[3],
+            minute: values[4],
+            second: values[5]
+        )
+        let modifiedAt = IRDateTime(
+            year: values[6],
+            month: values[7],
+            day: values[8],
+            hour: values[9],
+            minute: values[10],
+            second: values[11]
+        )
+        return (createdAt, modifiedAt)
     }
 
     // MARK: - Elements
