@@ -100,10 +100,12 @@ public struct OASISWriter: Sendable {
 
     // MARK: - Strings
 
-    public mutating func writeAString(_ value: String) {
-        let utf8 = value.utf8
-        writeUnsignedInteger(UInt64(utf8.count))
-        data.append(contentsOf: utf8)
+    public mutating func writeAString(_ value: String) throws {
+        guard let ascii = value.data(using: .ascii) else {
+            throw OASISError.invalidString(offset: data.count)
+        }
+        writeUnsignedInteger(UInt64(ascii.count))
+        data.append(ascii)
     }
 
     public mutating func writeBString(_ value: Data) {
@@ -341,7 +343,7 @@ public struct OASISWriter: Sendable {
 
     // MARK: - Property Value
 
-    public mutating func writePropertyValue(_ value: OASISPropertyValue) {
+    public mutating func writePropertyValue(_ value: OASISPropertyValue) throws {
         switch value {
         case .real(let v):
             writeUnsignedInteger(0)
@@ -354,7 +356,7 @@ public struct OASISWriter: Sendable {
             writeSignedInteger(v)
         case .aString(let s):
             writeUnsignedInteger(3)
-            writeAString(s)
+            try writeAString(s)
         case .bString(let bytes):
             writeUnsignedInteger(4)
             writeBString(Data(bytes))

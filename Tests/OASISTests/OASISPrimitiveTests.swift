@@ -244,7 +244,7 @@ struct OASISRealTests {
 struct OASISStringTests {
     @Test func emptyString() throws {
         var writer = OASISWriter()
-        writer.writeAString("")
+        try writer.writeAString("")
         var reader = OASISReader(data: writer.data)
         let value = try reader.readAString()
         #expect(value == "")
@@ -252,7 +252,7 @@ struct OASISStringTests {
 
     @Test func simpleASCII() throws {
         var writer = OASISWriter()
-        writer.writeAString("NAND2")
+        try writer.writeAString("NAND2")
         var reader = OASISReader(data: writer.data)
         let value = try reader.readAString()
         #expect(value == "NAND2")
@@ -261,10 +261,17 @@ struct OASISStringTests {
     @Test func longerString() throws {
         let original = "METAL1_ROUTING_LAYER"
         var writer = OASISWriter()
-        writer.writeAString(original)
+        try writer.writeAString(original)
         var reader = OASISReader(data: writer.data)
         let value = try reader.readAString()
         #expect(value == original)
+    }
+
+    @Test func aStringRejectsNonASCII() {
+        var writer = OASISWriter()
+        #expect(throws: OASISError.self) {
+            try writer.writeAString("non-ascii-\u{00E9}")
+        }
     }
 
     @Test func binaryString() throws {

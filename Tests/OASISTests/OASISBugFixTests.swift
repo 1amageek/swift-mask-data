@@ -96,13 +96,13 @@ struct OASISBugFixTests {
 
         // START
         w.writeByte(OASISRecordType.start.rawValue)
-        w.writeAString("1.0")
+        try w.writeAString("1.0")
         w.writeReal(0.001) // 1000 dbu/um
         w.writeUnsignedInteger(0)
 
         // CELLNAME
         w.writeByte(OASISRecordType.cellname.rawValue)
-        w.writeAString("REPTEST")
+        try w.writeAString("REPTEST")
 
         // CELL (by ref)
         w.writeByte(OASISRecordType.cellRef.rawValue)
@@ -139,7 +139,7 @@ struct OASISBugFixTests {
 
         // END
         w.writeByte(OASISRecordType.end.rawValue)
-        w.writeAString("")
+        try w.writeAString("")
         w.writeUnsignedInteger(0)
 
         let result = try OASISLibraryReader.read(w.data)
@@ -231,13 +231,13 @@ struct OASISBugFixTests {
 
         // START
         w.writeByte(OASISRecordType.start.rawValue)
-        w.writeAString("1.0")
+        try w.writeAString("1.0")
         w.writeReal(0.001)
         w.writeUnsignedInteger(0)
 
         // CELLNAME
         w.writeByte(OASISRecordType.cellname.rawValue)
-        w.writeAString("PROPTEST")
+        try w.writeAString("PROPTEST")
 
         // CELL (by ref)
         w.writeByte(OASISRecordType.cellRef.rawValue)
@@ -262,15 +262,15 @@ struct OASISBugFixTests {
         let propInfoByte: UInt8 = 0x34
         w.writeByte(OASISRecordType.property.rawValue)
         w.writeByte(propInfoByte)
-        w.writeAString("test_prop")       // inline property name
+        try w.writeAString("test_prop")       // inline property name
         // 3 property values (type 3 = a-string)
-        w.writePropertyValue(.aString("alpha"))
-        w.writePropertyValue(.aString("beta"))
-        w.writePropertyValue(.aString("gamma"))
+        try w.writePropertyValue(.aString("alpha"))
+        try w.writePropertyValue(.aString("beta"))
+        try w.writePropertyValue(.aString("gamma"))
 
         // END
         w.writeByte(OASISRecordType.end.rawValue)
-        w.writeAString("")
+        try w.writeAString("")
         w.writeUnsignedInteger(0)
 
         let result = try OASISLibraryReader.read(w.data)

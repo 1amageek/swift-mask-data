@@ -11,7 +11,7 @@ public enum OASISLibraryWriter {
         w.writeMagic()
 
         // START record (record type 1)
-        writeStartRecord(&w, library: library)
+        try writeStartRecord(&w, library: library)
 
         // CELLNAME records (name table)
         var cellNameTable: [String: UInt64] = [:]
@@ -19,7 +19,7 @@ public enum OASISLibraryWriter {
             cellNameTable[cell.name] = UInt64(index)
             // CELLNAME record (record type 3): implicit reference number
             w.writeByte(OASISRecordType.cellname.rawValue)
-            w.writeAString(cell.name)
+            try w.writeAString(cell.name)
         }
 
         // CELL records
@@ -28,16 +28,16 @@ public enum OASISLibraryWriter {
         }
 
         // END record (record type 2)
-        writeEndRecord(&w)
+        try writeEndRecord(&w)
 
         return w.data
     }
 
     // MARK: - START
 
-    private static func writeStartRecord(_ w: inout OASISWriter, library: IRLibrary) {
+    private static func writeStartRecord(_ w: inout OASISWriter, library: IRLibrary) throws {
         w.writeByte(OASISRecordType.start.rawValue)
-        w.writeAString("1.0") // version
+        try w.writeAString("1.0") // version
         // unit: dbuPerMicron as real (1 micron = dbuPerMicron database units)
         // OASIS unit is the database unit size in microns = 1/dbuPerMicron
         let unitInMicrons = 1.0 / library.units.dbuPerMicron
@@ -47,16 +47,16 @@ public enum OASISLibraryWriter {
 
         // Store library name as PROPSTRING (record type 9) for round-trip
         w.writeByte(OASISRecordType.propstring.rawValue)
-        w.writeAString(library.name)
+        try w.writeAString(library.name)
     }
 
     // MARK: - END
 
-    private static func writeEndRecord(_ w: inout OASISWriter) {
+    private static func writeEndRecord(_ w: inout OASISWriter) throws {
         // Pad to ensure 256-byte aligned end (simplified: just write END + padding)
         w.writeByte(OASISRecordType.end.rawValue)
         // padding-string (empty)
-        w.writeAString("")
+        try w.writeAString("")
         // validation-scheme = 0 (none)
         w.writeUnsignedInteger(0)
     }
@@ -71,7 +71,7 @@ public enum OASISLibraryWriter {
         } else {
             // Fallback: CELL by name (record type 13)
             w.writeByte(OASISRecordType.cell.rawValue)
-            w.writeAString(cell.name)
+            try w.writeAString(cell.name)
         }
 
         for element in cell.elements {
@@ -85,19 +85,19 @@ public enum OASISLibraryWriter {
         switch element {
         case .boundary(let b):
             try writeBoundary(&w, b)
-            writeProperties(&w, b.properties)
+            try writeProperties(&w, b.properties)
         case .path(let p):
             try writePath(&w, p)
-            writeProperties(&w, p.properties)
+            try writeProperties(&w, p.properties)
         case .cellRef(let r):
-            writePlacement(&w, r, cellNameTable: cellNameTable)
-            writeProperties(&w, r.properties)
+            try writePlacement(&w, r, cellNameTable: cellNameTable)
+            try writeProperties(&w, r.properties)
         case .arrayRef(let a):
-            writeArrayPlacement(&w, a, cellNameTable: cellNameTable)
-            writeProperties(&w, a.properties)
+            try writeArrayPlacement(&w, a, cellNameTable: cellNameTable)
+            try writeProperties(&w, a.properties)
         case .text(let t):
             try writeText(&w, t)
-            writeProperties(&w, t.properties)
+            try writeProperties(&w, t.properties)
         }
     }
 
@@ -187,7 +187,7 @@ public enum OASISLibraryWriter {
         // Bit layout: C(6) N(5) X(4) Y(3) R(2) T(1) L(0)
         let infoByte: UInt8 = 0b0101_1011 // C(text-string), N=0, X, Y, T, L
         w.writeByte(infoByte)
-        w.writeAString(t.string)     // C: inline text string
+        try w.writeAString(t.string)     // C: inline text string
         try writeUnsignedLayerValue(&w, field: "layer", value: t.layer)
         try writeUnsignedLayerValue(&w, field: "texttype", value: t.texttype)
         w.writeSignedInteger(Int64(t.position.x))   // X
@@ -201,7 +201,7 @@ public enum OASISLibraryWriter {
         w.writeUnsignedInteger(UInt64(value))
     }
 
-    private static func writePlacement(_ w: inout OASISWriter, _ r: IRCellRef, cellNameTable: [String: UInt64]) {
+    private static func writePlacement(_ w: inout OASISWriter, _ r: IRCellRef, cellNameTable: [String: UInt64]) throws {
         let hasTransform = r.transform.mirrorX || r.transform.magnification != 1.0 || r.transform.angle != 0.0
 
         if hasTransform {
@@ -216,7 +216,7 @@ public enum OASISLibraryWriter {
             w.writeByte(infoByte)
 
             // Cell reference (inline name)
-            w.writeAString(r.cellName)
+            try w.writeAString(r.cellName)
 
             if r.transform.magnification != 1.0 {
                 w.writeReal(r.transform.magnification)
@@ -234,20 +234,20 @@ public enum OASISLibraryWriter {
             // Bit layout: C(7) N(6) X(5) Y(4) R(3) 0 0 0
             let infoByte: UInt8 = 0b1011_0000 // C, X, Y
             w.writeByte(infoByte)
-            w.writeAString(r.cellName)
+            try w.writeAString(r.cellName)
             w.writeSignedInteger(Int64(r.origin.x))
             w.writeSignedInteger(Int64(r.origin.y))
         }
     }
 
-    private static func writeArrayPlacement(_ w: inout OASISWriter, _ a: IRArrayRef, cellNameTable: [String: UInt64]) {
+    private static func writeArrayPlacement(_ w: inout OASISWriter, _ a: IRArrayRef, cellNameTable: [String: UInt64]) throws {
         // Convert AREF to PLACEMENT + repetition
         // Use simple PLACEMENT (record type 17) with grid repetition
         w.writeByte(OASISRecordType.placement.rawValue)
         // info-byte: C X Y R set
         let infoByte: UInt8 = 0b1011_1000 // C, X, Y, R
         w.writeByte(infoByte)
-        w.writeAString(a.cellName)
+        try w.writeAString(a.cellName)
 
         // Compute spacings from reference points
         let colSpacing: UInt64
@@ -297,7 +297,7 @@ public enum OASISLibraryWriter {
     }
 
     /// Write PROPERTY records for an element's IR properties.
-    private static func writeProperties(_ w: inout OASISWriter, _ properties: [IRProperty]) {
+    private static func writeProperties(_ w: inout OASISWriter, _ properties: [IRProperty]) throws {
         for prop in properties {
             w.writeByte(OASISRecordType.property.rawValue)
             // info-byte: UUUU(7:4)=0001, V(3)=0, C(2)=1, T(1)=0 (inline name), S(0)=0
@@ -309,10 +309,10 @@ public enum OASISLibraryWriter {
             let name = parts.count > 0 ? String(parts[0]) : "attr_\(prop.attribute)"
             let value = parts.count > 1 ? String(parts[1]) : prop.value
 
-            w.writeAString(name)       // inline property name
+            try w.writeAString(name)       // inline property name
             // Write 1 value: a-string (type 3)
             w.writeUnsignedInteger(3)  // property value type = a-string
-            w.writeAString(value)
+            try w.writeAString(value)
         }
     }
 
