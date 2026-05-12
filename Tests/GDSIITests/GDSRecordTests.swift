@@ -110,28 +110,35 @@ struct GDSRecordWriterTests {
         #expect(bytes == [0x00, 0x06, 0x00, 0x02, 0x02, 0x58])
     }
 
-    @Test func writeString() {
+    @Test func writeString() throws {
         var writer = GDSRecordWriter()
-        writer.writeString(.libname, value: "TEST")
+        try writer.writeString(.libname, value: "TEST")
         let bytes = Array(writer.data)
         // "TEST" = 4 bytes, even length, no padding needed
         #expect(bytes == [0x00, 0x08, 0x02, 0x06, 0x54, 0x45, 0x53, 0x54])
     }
 
-    @Test func writeStringOddLength() {
+    @Test func writeStringOddLength() throws {
         var writer = GDSRecordWriter()
-        writer.writeString(.libname, value: "AB")
+        try writer.writeString(.libname, value: "AB")
         let bytes = Array(writer.data)
         // "AB" = 2 bytes, even, total = 6
         #expect(bytes == [0x00, 0x06, 0x02, 0x06, 0x41, 0x42])
     }
 
-    @Test func writeStringOddPadding() {
+    @Test func writeStringOddPadding() throws {
         var writer = GDSRecordWriter()
-        writer.writeString(.libname, value: "ABC")
+        try writer.writeString(.libname, value: "ABC")
         let bytes = Array(writer.data)
         // "ABC" = 3 bytes, padded to 4 bytes, total = 8
         #expect(bytes == [0x00, 0x08, 0x02, 0x06, 0x41, 0x42, 0x43, 0x00])
+    }
+
+    @Test func writeStringRejectsNonASCII() {
+        var writer = GDSRecordWriter()
+        #expect(throws: GDSError.self) {
+            try writer.writeString(.libname, value: "LIB_µ")
+        }
     }
 
     @Test func writeXY() {
@@ -147,7 +154,7 @@ struct GDSRecordWriterTests {
     @Test func writeReadRoundTrip() throws {
         var writer = GDSRecordWriter()
         writer.writeInt16(.header, values: [600])
-        writer.writeString(.libname, value: "MYLIB")
+        try writer.writeString(.libname, value: "MYLIB")
         writer.writeNoData(.endlib)
 
         var reader = GDSRecordReader(data: writer.data)

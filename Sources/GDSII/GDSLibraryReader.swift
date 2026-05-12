@@ -42,10 +42,13 @@ public enum GDSLibraryReader {
         if case .real8(let values) = unitsRec.payload, values.count >= 2 {
             let userUnitsPerDBU = values[0]
             let metersPerDBU = values[1]
-            // dbuPerMicron = 1e-6 / metersPerDBU
-            let dbuPerMicron = 1e-6 / metersPerDBU
-            _ = userUnitsPerDBU // stored in GDSII but derived from dbuPerMicron
-            units = IRUnits(dbuPerMicron: dbuPerMicron)
+            if userUnitsPerDBU > 0 {
+                units = IRUnits(dbuPerMicron: 1.0 / userUnitsPerDBU)
+            } else if metersPerDBU > 0 {
+                units = IRUnits(dbuPerMicron: 1e-6 / metersPerDBU)
+            } else {
+                units = .default
+            }
         } else {
             units = .default
         }

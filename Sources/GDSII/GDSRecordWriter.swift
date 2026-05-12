@@ -60,11 +60,13 @@ public struct GDSRecordWriter: Sendable {
         }
     }
 
-    public mutating func writeString(_ type: GDSRecordType, value: String) {
-        let utf8 = value.utf8
-        let padded = utf8.count % 2 != 0
-        writeHeader(type: type, dataType: .string, payloadLength: utf8.count + (padded ? 1 : 0))
-        buffer.append(contentsOf: utf8)
+    public mutating func writeString(_ type: GDSRecordType, value: String) throws {
+        guard let ascii = value.data(using: .ascii) else {
+            throw GDSError.invalidStringValue(recordType: type, value: value)
+        }
+        let padded = ascii.count % 2 != 0
+        writeHeader(type: type, dataType: .string, payloadLength: ascii.count + (padded ? 1 : 0))
+        buffer.append(ascii)
         if padded { buffer.append(0) }
     }
 

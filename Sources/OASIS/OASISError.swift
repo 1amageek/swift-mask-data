@@ -9,4 +9,5 @@ public enum OASISError: Error, Sendable {
     case invalidRepetitionType(offset: Int, typeCode: UInt64)
     case decompressFailure(offset: Int)
     case invalidCTrapezoidType(offset: Int, typeCode: UInt64)
+    case negativeLayerValue(field: String, value: Int16)
 }

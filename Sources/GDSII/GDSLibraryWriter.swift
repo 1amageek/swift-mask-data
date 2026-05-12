@@ -15,7 +15,7 @@ public enum GDSLibraryWriter {
         w.writeInt16(.bgnlib, values: ts + ts)
 
         // LIBNAME
-        w.writeString(.libname, value: library.name)
+        try w.writeString(.libname, value: library.name)
 
         // UNITS: userUnitsPerDBU, metersPerDBU
         w.writeReal8(.units, values: [
@@ -25,7 +25,7 @@ public enum GDSLibraryWriter {
 
         // Structures (cells)
         for cell in library.cells {
-            writeCell(&w, cell)
+            try writeCell(&w, cell)
         }
 
         // ENDLIB
@@ -36,13 +36,13 @@ public enum GDSLibraryWriter {
 
     // MARK: - Cell
 
-    private static func writeCell(_ w: inout GDSRecordWriter, _ cell: IRCell) {
+    private static func writeCell(_ w: inout GDSRecordWriter, _ cell: IRCell) throws {
         let ts = currentTimestamp()
         w.writeInt16(.bgnstr, values: ts + ts)
-        w.writeString(.strname, value: cell.name)
+        try w.writeString(.strname, value: cell.name)
 
         for element in cell.elements {
-            writeElement(&w, element)
+            try writeElement(&w, element)
         }
 
         w.writeNoData(.endstr)
@@ -50,31 +50,31 @@ public enum GDSLibraryWriter {
 
     // MARK: - Elements
 
-    private static func writeElement(_ w: inout GDSRecordWriter, _ element: IRElement) {
+    private static func writeElement(_ w: inout GDSRecordWriter, _ element: IRElement) throws {
         switch element {
         case .boundary(let b):
-            writeBoundary(&w, b)
+            try writeBoundary(&w, b)
         case .path(let p):
-            writePath(&w, p)
+            try writePath(&w, p)
         case .cellRef(let r):
-            writeCellRef(&w, r)
+            try writeCellRef(&w, r)
         case .arrayRef(let a):
-            writeArrayRef(&w, a)
+            try writeArrayRef(&w, a)
         case .text(let t):
-            writeText(&w, t)
+            try writeText(&w, t)
         }
     }
 
-    private static func writeBoundary(_ w: inout GDSRecordWriter, _ b: IRBoundary) {
+    private static func writeBoundary(_ w: inout GDSRecordWriter, _ b: IRBoundary) throws {
         w.writeNoData(.boundary)
         w.writeInt16(.layer, values: [b.layer])
         w.writeInt16(.datatype, values: [b.datatype])
         w.writeXY(b.points)
-        writeProperties(&w, b.properties)
+        try writeProperties(&w, b.properties)
         w.writeNoData(.endel)
     }
 
-    private static func writePath(_ w: inout GDSRecordWriter, _ p: IRPath) {
+    private static func writePath(_ w: inout GDSRecordWriter, _ p: IRPath) throws {
         w.writeNoData(.path)
         w.writeInt16(.layer, values: [p.layer])
         w.writeInt16(.datatype, values: [p.datatype])
@@ -91,37 +91,37 @@ public enum GDSLibraryWriter {
             w.writeInt32(.endextn, values: [eext])
         }
         w.writeXY(p.points)
-        writeProperties(&w, p.properties)
+        try writeProperties(&w, p.properties)
         w.writeNoData(.endel)
     }
 
-    private static func writeCellRef(_ w: inout GDSRecordWriter, _ r: IRCellRef) {
+    private static func writeCellRef(_ w: inout GDSRecordWriter, _ r: IRCellRef) throws {
         w.writeNoData(.sref)
-        w.writeString(.sname, value: r.cellName)
+        try w.writeString(.sname, value: r.cellName)
         writeTransform(&w, r.transform)
         w.writeXY([r.origin])
-        writeProperties(&w, r.properties)
+        try writeProperties(&w, r.properties)
         w.writeNoData(.endel)
     }
 
-    private static func writeArrayRef(_ w: inout GDSRecordWriter, _ a: IRArrayRef) {
+    private static func writeArrayRef(_ w: inout GDSRecordWriter, _ a: IRArrayRef) throws {
         w.writeNoData(.aref)
-        w.writeString(.sname, value: a.cellName)
+        try w.writeString(.sname, value: a.cellName)
         writeTransform(&w, a.transform)
         w.writeInt16(.colrow, values: [a.columns, a.rows])
         w.writeXY(a.referencePoints)
-        writeProperties(&w, a.properties)
+        try writeProperties(&w, a.properties)
         w.writeNoData(.endel)
     }
 
-    private static func writeText(_ w: inout GDSRecordWriter, _ t: IRText) {
+    private static func writeText(_ w: inout GDSRecordWriter, _ t: IRText) throws {
         w.writeNoData(.text)
         w.writeInt16(.layer, values: [t.layer])
         w.writeInt16(.texttype, values: [t.texttype])
         writeTransform(&w, t.transform)
         w.writeXY([t.position])
-        w.writeString(.string, value: t.string)
-        writeProperties(&w, t.properties)
+        try w.writeString(.string, value: t.string)
+        try writeProperties(&w, t.properties)
         w.writeNoData(.endel)
     }
 
@@ -145,10 +145,10 @@ public enum GDSLibraryWriter {
 
     // MARK: - Properties
 
-    private static func writeProperties(_ w: inout GDSRecordWriter, _ props: [IRProperty]) {
+    private static func writeProperties(_ w: inout GDSRecordWriter, _ props: [IRProperty]) throws {
         for prop in props {
             w.writeInt16(.propattr, values: [prop.attribute])
-            w.writeString(.propvalue, value: prop.value)
+            try w.writeString(.propvalue, value: prop.value)
         }
     }
 

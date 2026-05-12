@@ -7,9 +7,9 @@ import LayoutIR
 @Suite("OASIS Round-Trip Bug Fixes")
 struct OASISRoundTripBugTests {
 
-    // MARK: - Bug 1: Negative layer/datatype must not crash
+    // MARK: - Bug 1: Negative layer/datatype must fail explicitly
 
-    @Test func testNegativeLayerDoesNotCrash() throws {
+    @Test func testNegativeLayerThrows() throws {
         let boundary = IRBoundary(
             layer: -1,
             datatype: -5,
@@ -27,16 +27,8 @@ struct OASISRoundTripBugTests {
             units: .default,
             cells: [IRCell(name: "NEG", elements: [.boundary(boundary)])]
         )
-        // Must not crash -- negative values are clamped to 0
-        let data = try OASISLibraryWriter.write(lib)
-        let result = try OASISLibraryReader.read(data)
-
-        #expect(result.cells.count == 1)
-        if case .boundary(let b) = result.cells[0].elements[0] {
-            #expect(b.layer == 0)
-            #expect(b.datatype == 0)
-        } else {
-            Issue.record("Expected boundary element")
+        #expect(throws: OASISError.self) {
+            try OASISLibraryWriter.write(lib)
         }
     }
 

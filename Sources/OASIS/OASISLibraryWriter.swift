@@ -24,7 +24,7 @@ public enum OASISLibraryWriter {
 
         // CELL records
         for cell in library.cells {
-            writeCell(&w, cell, cellNameTable: cellNameTable)
+            try writeCell(&w, cell, cellNameTable: cellNameTable)
         }
 
         // END record (record type 2)
@@ -63,7 +63,7 @@ public enum OASISLibraryWriter {
 
     // MARK: - Cell
 
-    private static func writeCell(_ w: inout OASISWriter, _ cell: IRCell, cellNameTable: [String: UInt64]) {
+    private static func writeCell(_ w: inout OASISWriter, _ cell: IRCell, cellNameTable: [String: UInt64]) throws {
         // CELL record (record type 14): reference by number
         if let refNum = cellNameTable[cell.name] {
             w.writeByte(OASISRecordType.cellRef.rawValue)
@@ -75,19 +75,19 @@ public enum OASISLibraryWriter {
         }
 
         for element in cell.elements {
-            writeElement(&w, element, cellNameTable: cellNameTable)
+            try writeElement(&w, element, cellNameTable: cellNameTable)
         }
     }
 
     // MARK: - Elements
 
-    private static func writeElement(_ w: inout OASISWriter, _ element: IRElement, cellNameTable: [String: UInt64]) {
+    private static func writeElement(_ w: inout OASISWriter, _ element: IRElement, cellNameTable: [String: UInt64]) throws {
         switch element {
         case .boundary(let b):
-            writeBoundary(&w, b)
+            try writeBoundary(&w, b)
             writeProperties(&w, b.properties)
         case .path(let p):
-            writePath(&w, p)
+            try writePath(&w, p)
             writeProperties(&w, p.properties)
         case .cellRef(let r):
             writePlacement(&w, r, cellNameTable: cellNameTable)
@@ -96,7 +96,7 @@ public enum OASISLibraryWriter {
             writeArrayPlacement(&w, a, cellNameTable: cellNameTable)
             writeProperties(&w, a.properties)
         case .text(let t):
-            writeText(&w, t)
+            try writeText(&w, t)
             writeProperties(&w, t.properties)
         }
     }
@@ -117,7 +117,7 @@ public enum OASISLibraryWriter {
         return (minX, minY, maxX - minX, maxY - minY)
     }
 
-    private static func writeBoundary(_ w: inout OASISWriter, _ b: IRBoundary) {
+    private static func writeBoundary(_ w: inout OASISWriter, _ b: IRBoundary) throws {
         // Check if axis-aligned rectangle → RECTANGLE record
         if let rect = isAxisAlignedRectangle(b.points) {
             // RECTANGLE (record type 20)
@@ -127,8 +127,8 @@ public enum OASISLibraryWriter {
             // Bit layout: S(7) W(6) H(5) X(4) Y(3) R(2) D(1) L(0)
             let infoByte: UInt8 = 0b0111_1011 // H, W, X, Y, D, L set
             w.writeByte(infoByte)
-            w.writeUnsignedInteger(UInt64(max(0, b.layer)))    // L
-            w.writeUnsignedInteger(UInt64(max(0, b.datatype)))  // D
+            try writeUnsignedLayerValue(&w, field: "layer", value: b.layer)
+            try writeUnsignedLayerValue(&w, field: "datatype", value: b.datatype)
             w.writeUnsignedInteger(UInt64(rect.w))      // W
             w.writeUnsignedInteger(UInt64(rect.h))      // H
             w.writeSignedInteger(Int64(rect.x))         // X
@@ -143,8 +143,8 @@ public enum OASISLibraryWriter {
         // Bit layout: P(5) X(4) Y(3) R(2) D(1) L(0)
         let infoByte: UInt8 = 0b0011_1011 // P, X, Y, D, L set
         w.writeByte(infoByte)
-        w.writeUnsignedInteger(UInt64(max(0, b.layer)))     // L
-        w.writeUnsignedInteger(UInt64(max(0, b.datatype)))   // D
+        try writeUnsignedLayerValue(&w, field: "layer", value: b.layer)
+        try writeUnsignedLayerValue(&w, field: "datatype", value: b.datatype)
 
         // Convert absolute points to delta-encoded point list (excluding close point)
         let deltas = absoluteToDeltas(b.points)
@@ -155,7 +155,7 @@ public enum OASISLibraryWriter {
         w.writeSignedInteger(Int64(b.points[0].y))
     }
 
-    private static func writePath(_ w: inout OASISWriter, _ p: IRPath) {
+    private static func writePath(_ w: inout OASISWriter, _ p: IRPath) throws {
         // PATH (record type 22)
         w.writeByte(OASISRecordType.path.rawValue)
         // info-byte: E X Y R D L W T
@@ -163,8 +163,8 @@ public enum OASISLibraryWriter {
         var infoByte: UInt8 = 0b1011_1011 // E(7), P(5), X(4), Y(3), D(1), L(0) set
         infoByte |= 0b0100_0000 // W(6) set → 0b1111_1011
         w.writeByte(infoByte)
-        w.writeUnsignedInteger(UInt64(max(0, p.layer)))     // L
-        w.writeUnsignedInteger(UInt64(max(0, p.datatype)))   // D
+        try writeUnsignedLayerValue(&w, field: "layer", value: p.layer)
+        try writeUnsignedLayerValue(&w, field: "datatype", value: p.datatype)
         w.writeUnsignedInteger(UInt64(p.width / 2))  // half-width
 
         // Extension scheme: encode pathType
@@ -180,7 +180,7 @@ public enum OASISLibraryWriter {
         w.writeSignedInteger(Int64(p.points[0].y))
     }
 
-    private static func writeText(_ w: inout OASISWriter, _ t: IRText) {
+    private static func writeText(_ w: inout OASISWriter, _ t: IRText) throws {
         // TEXT (record type 19)
         w.writeByte(OASISRecordType.text.rawValue)
         // info-byte: C X Y R T L
@@ -188,10 +188,17 @@ public enum OASISLibraryWriter {
         let infoByte: UInt8 = 0b0101_1011 // C(text-string), N=0, X, Y, T, L
         w.writeByte(infoByte)
         w.writeAString(t.string)     // C: inline text string
-        w.writeUnsignedInteger(UInt64(max(0, t.layer)))    // L
-        w.writeUnsignedInteger(UInt64(max(0, t.texttype)))  // T
+        try writeUnsignedLayerValue(&w, field: "layer", value: t.layer)
+        try writeUnsignedLayerValue(&w, field: "texttype", value: t.texttype)
         w.writeSignedInteger(Int64(t.position.x))   // X
         w.writeSignedInteger(Int64(t.position.y))   // Y
+    }
+
+    private static func writeUnsignedLayerValue(_ w: inout OASISWriter, field: String, value: Int16) throws {
+        guard value >= 0 else {
+            throw OASISError.negativeLayerValue(field: field, value: value)
+        }
+        w.writeUnsignedInteger(UInt64(value))
     }
 
     private static func writePlacement(_ w: inout OASISWriter, _ r: IRCellRef, cellNameTable: [String: UInt64]) {

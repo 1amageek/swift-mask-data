@@ -6,4 +6,5 @@ public enum GDSError: Error, Sendable {
     case missingRequiredRecord(GDSRecordType, context: String)
     case unexpectedRecord(got: GDSRecordType, expected: GDSRecordType, offset: Int)
     case invalidString(offset: Int)
+    case invalidStringValue(recordType: GDSRecordType, value: String)
 }
