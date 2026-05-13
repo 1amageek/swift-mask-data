@@ -101,6 +101,37 @@ struct GDSErrorPathTests {
         }
     }
 
+    @Test func illegalTopLevelRecordThrows() throws {
+        var writer = GDSRecordWriter()
+        writer.writeInt16(.header, values: [6])
+        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.libname, value: "BADLIB")
+        writer.writeReal8(.units, values: [0.001, 1e-9])
+        writer.writeInt16(.layer, values: [1])
+        writer.writeNoData(.endlib)
+
+        #expect(throws: GDSError.self) {
+            _ = try GDSLibraryReader.read(writer.data)
+        }
+    }
+
+    @Test func illegalCellRecordThrows() throws {
+        var writer = GDSRecordWriter()
+        writer.writeInt16(.header, values: [6])
+        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.libname, value: "BADLIB")
+        writer.writeReal8(.units, values: [0.001, 1e-9])
+        writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.strname, value: "TOP")
+        writer.writeInt16(.layer, values: [1])
+        writer.writeNoData(.endstr)
+        writer.writeNoData(.endlib)
+
+        #expect(throws: GDSError.self) {
+            _ = try GDSLibraryReader.read(writer.data)
+        }
+    }
+
     // MARK: - GDSReal8 edge cases
 
     @Test func real8AllZeroBytes() {

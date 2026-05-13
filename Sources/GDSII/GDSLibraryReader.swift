@@ -64,9 +64,14 @@ public enum GDSLibraryReader {
             } else if nextType == .bgnstr {
                 let cell = try readCell(&r, options: options)
                 cells.append(cell)
-            } else {
-                // Skip unknown top-level records
+            } else if isOptionalLibraryRecord(nextType) {
                 _ = try r.readRecord()
+            } else {
+                throw GDSError.unsupportedRecord(
+                    recordType: nextType,
+                    context: "library",
+                    offset: r.currentOffset
+                )
             }
         }
 
@@ -142,6 +147,7 @@ public enum GDSLibraryReader {
     // MARK: - Elements
 
     private static func readElement(_ r: inout GDSRecordReader, options: GDSReadOptions) throws -> IRElement? {
+        let startOffset = r.currentOffset
         let startRec = try r.readRecord()
 
         switch startRec.recordType {
@@ -168,9 +174,20 @@ public enum GDSLibraryReader {
             try skipToEndel(&r)
             return nil
         default:
-            // Unknown element: skip until ENDEL
-            try skipToEndel(&r)
-            return nil
+            throw GDSError.unsupportedRecord(
+                recordType: startRec.recordType,
+                context: "cell element",
+                offset: startOffset
+            )
+        }
+    }
+
+    private static func isOptionalLibraryRecord(_ recordType: GDSRecordType) -> Bool {
+        switch recordType {
+        case .reflibs, .fonts, .attrtable, .generations, .format:
+            return true
+        default:
+            return false
         }
     }
 
