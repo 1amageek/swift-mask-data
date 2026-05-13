@@ -56,10 +56,12 @@ public enum GDSLibraryReader {
 
         // Read structures until ENDLIB
         var cells: [IRCell] = []
+        var foundEndlib = false
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endlib {
                 _ = try r.readRecord()
+                foundEndlib = true
                 break
             } else if nextType == .bgnstr {
                 let cell = try readCell(&r, options: options)
@@ -73,6 +75,9 @@ public enum GDSLibraryReader {
                     offset: r.currentOffset
                 )
             }
+        }
+        guard foundEndlib else {
+            throw GDSError.missingRequiredRecord(.endlib, context: "library")
         }
 
         return IRLibrary(
@@ -102,15 +107,20 @@ public enum GDSLibraryReader {
 
         // Read elements until ENDSTR
         var elements: [IRElement] = []
+        var foundEndstr = false
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endstr {
                 _ = try r.readRecord()
+                foundEndstr = true
                 break
             }
             if let element = try readElement(&r, options: options) {
                 elements.append(element)
             }
+        }
+        guard foundEndstr else {
+            throw GDSError.missingRequiredRecord(.endstr, context: "cell \(cellName)")
         }
 
         return IRCell(

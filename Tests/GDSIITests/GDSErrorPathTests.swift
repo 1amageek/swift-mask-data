@@ -132,6 +132,33 @@ struct GDSErrorPathTests {
         }
     }
 
+    @Test func missingEndlibThrows() throws {
+        var writer = GDSRecordWriter()
+        writer.writeInt16(.header, values: [6])
+        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.libname, value: "BADLIB")
+        writer.writeReal8(.units, values: [0.001, 1e-9])
+
+        #expect(throws: GDSError.self) {
+            _ = try GDSLibraryReader.read(writer.data)
+        }
+    }
+
+    @Test func missingEndstrThrows() throws {
+        var writer = GDSRecordWriter()
+        writer.writeInt16(.header, values: [6])
+        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.libname, value: "BADLIB")
+        writer.writeReal8(.units, values: [0.001, 1e-9])
+        writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.strname, value: "TOP")
+        writer.writeNoData(.endlib)
+
+        #expect(throws: GDSError.self) {
+            _ = try GDSLibraryReader.read(writer.data)
+        }
+    }
+
     // MARK: - GDSReal8 edge cases
 
     @Test func real8AllZeroBytes() {
