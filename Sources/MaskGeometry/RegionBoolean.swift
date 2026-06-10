@@ -4,10 +4,10 @@ import LayoutIR
 /// or edge processor (non-Manhattan).
 enum RegionBoolean {
 
-    static func perform(_ op: BooleanOp, _ a: Region, _ b: Region) -> Region {
+    static func perform(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
         // Check if all polygons are Manhattan
-        let allManhattan = a.polygons.allSatisfy { PolygonUtils.isManhattan($0.points) }
-                        && b.polygons.allSatisfy { PolygonUtils.isManhattan($0.points) }
+        let allManhattan = a.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
+                        && b.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
 
         if allManhattan {
             return performManhattan(op, a, b)
@@ -18,28 +18,10 @@ enum RegionBoolean {
 
     // MARK: - Manhattan Path (scanline decomposition)
 
-    private static func performManhattan(_ op: BooleanOp, _ a: Region, _ b: Region) -> Region {
-        let bandsA = decompose(a)
-        let bandsB = decompose(b)
-
-        var ys = Set<Int32>()
-        for band in bandsA { ys.insert(band.yMin); ys.insert(band.yMax) }
-        for band in bandsB { ys.insert(band.yMin); ys.insert(band.yMax) }
-        let sortedYs = ys.sorted()
-
-        guard sortedYs.count >= 2 else {
-            return Region(layer: a.layer)
-        }
-
+    private static func performManhattan(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
         var resultBands: [Band] = []
 
-        for yi in 0..<(sortedYs.count - 1) {
-            let yMin = sortedYs[yi]
-            let yMax = sortedYs[yi + 1]
-
-            let intervalsA = xIntervals(bandsA, at: yMin, yMax: yMax)
-            let intervalsB = xIntervals(bandsB, at: yMin, yMax: yMax)
-
+        ScanlineSweep.sweepRows(decompose(a), decompose(b)) { yMin, yMax, intervalsA, intervalsB in
             let result: [Interval]
             switch op {
             case .or:
@@ -59,6 +41,10 @@ enum RegionBoolean {
             }
         }
 
+        guard !resultBands.isEmpty else {
+            return Region(layer: a.layer)
+        }
+
         let polys = resultBands.map { band -> IRBoundary in
             IRBoundary(layer: a.layer, datatype: 0, points: [
                 IRPoint(x: band.xMin, y: band.yMin),
@@ -74,8 +60,8 @@ enum RegionBoolean {
 
     // MARK: - General Path (edge processor)
 
-    private static func performGeneral(_ op: BooleanOp, _ a: Region, _ b: Region) -> Region {
-        let result = EdgeProcessor.booleanOp(op, a: a.polygons, b: b.polygons, layer: a.layer)
+    private static func performGeneral(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
+        let result = EdgeProcessor.perform(op, on: a.polygons, b.polygons, layer: a.layer)
         return Region(layer: a.layer, polygons: result)
     }
 
@@ -92,19 +78,81 @@ enum RegionBoolean {
     static func decompose(_ region: Region) -> [Band] {
         var bands: [Band] = []
         for poly in region.polygons {
-            guard let bb = PolygonUtils.boundingBox(of: poly.points) else { continue }
-            bands.append(Band(xMin: bb.minX, xMax: bb.maxX, yMin: bb.minY, yMax: bb.maxY))
+            bands.append(contentsOf: decompose(poly))
         }
         return bands
     }
 
-    static func xIntervals(_ bands: [Band], at yMin: Int32, yMax: Int32) -> [Interval] {
-        bands.compactMap { band in
-            if band.yMin <= yMin && band.yMax >= yMax {
-                return Interval(lo: band.xMin, hi: band.xMax)
+    /// Bands of the union coverage of all polygons: per scanline row, abutting
+    /// and overlapping x-intervals are coalesced. Unlike `decompose`, the seam
+    /// between two stacked polygons of the same feature never splits a row's
+    /// coverage, so a band edge here is always a true region boundary.
+    static func unionBands(_ region: Region) -> [Band] {
+        var result: [Band] = []
+        ScanlineSweep.sweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
+            for interval in unionIntervals(intervals) {
+                result.append(Band(xMin: interval.lo, xMax: interval.hi, yMin: yMin, yMax: yMax))
             }
-            return nil
         }
+        return result
+    }
+
+    private static func decompose(_ polygon: IRBoundary) -> [Band] {
+        let points = normalizedPoints(polygon.points)
+        guard points.count >= 3 else { return [] }
+
+        let sortedYs = Array(Set(points.map(\.y))).sorted()
+        guard sortedYs.count >= 2 else { return [] }
+
+        var bands: [Band] = []
+
+        for index in 0..<(sortedYs.count - 1) {
+            let yMin = sortedYs[index]
+            let yMax = sortedYs[index + 1]
+            guard yMin < yMax else { continue }
+
+            let sampleY = (Double(yMin) + Double(yMax)) / 2.0
+            let xs = verticalIntersections(in: points, at: sampleY)
+
+            var pairIndex = 0
+            while pairIndex + 1 < xs.count {
+                let xMin = xs[pairIndex]
+                let xMax = xs[pairIndex + 1]
+                if xMin < xMax {
+                    bands.append(Band(xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax))
+                }
+                pairIndex += 2
+            }
+        }
+
+        return bands
+    }
+
+    private static func normalizedPoints(_ points: [IRPoint]) -> [IRPoint] {
+        guard points.count > 1, points.first == points.last else {
+            return points
+        }
+        return Array(points.dropLast())
+    }
+
+    private static func verticalIntersections(in points: [IRPoint], at sampleY: Double) -> [Int32] {
+        var xs: [Int32] = []
+
+        for index in points.indices {
+            let nextIndex = index == points.index(before: points.endIndex) ? points.startIndex : points.index(after: index)
+            let p1 = points[index]
+            let p2 = points[nextIndex]
+
+            guard p1.x == p2.x else { continue }
+
+            let edgeYMin = Double(min(p1.y, p2.y))
+            let edgeYMax = Double(max(p1.y, p2.y))
+            if edgeYMin <= sampleY && sampleY < edgeYMax {
+                xs.append(p1.x)
+            }
+        }
+
+        return xs.sorted()
     }
 
     static func unionIntervals(_ intervals: [Interval]) -> [Interval] {
@@ -171,7 +219,7 @@ enum RegionBoolean {
         }
 
         let boxes = rects.compactMap { poly -> Rect? in
-            guard let bb = PolygonUtils.boundingBox(of: poly.points) else { return nil }
+            guard let bb = PolygonGeometry.boundingBox(of: poly.points) else { return nil }
             return Rect(minX: bb.minX, minY: bb.minY, maxX: bb.maxX, maxY: bb.maxY)
         }.sorted { $0.minX < $1.minX || ($0.minX == $1.minX && $0.minY < $1.minY) }
 

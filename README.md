@@ -4,7 +4,7 @@ A pure-Swift library for reading, writing, and manipulating semiconductor mask l
 
 ## Requirements
 
-- Swift 6.2+
+- Swift 6.3+
 - macOS 26+
 
 ## Installation
@@ -25,7 +25,7 @@ Then add the modules you need:
     dependencies: [
         .product(name: "GDSII", package: "swift-mask-data"),
         .product(name: "OASIS", package: "swift-mask-data"),
-        .product(name: "GeometryOps", package: "swift-mask-data"),
+        .product(name: "MaskGeometry", package: "swift-mask-data"),
         // ...
     ]
 )
@@ -43,7 +43,18 @@ Then add the modules you need:
 | **DEF** | Design Exchange Format reader/writer |
 | **DXF** | AutoCAD Drawing Exchange Format reader/writer |
 | **FormatDetector** | Automatic layout format detection |
-| **GeometryOps** | Boolean operations, sizing, and DRC on polygon regions |
+| **MaskGeometry** | Boolean operations, sizing, and DRC on polygon regions |
+
+## API Migration Notes
+
+| Previous API | Current API |
+|--------------|-------------|
+| `GeometryOps` product and target | `MaskGeometry` |
+| `BooleanOp` | `BooleanOperation` |
+| `PolygonUtils` | `PolygonGeometry` |
+| `PolygonGeometry.intersection(of:_,_:,and:_,_)` | `PolygonGeometry.intersection(of: IREdge, and: IREdge)` |
+| `PolygonGeometry.distance(between:_,_:,and:_,_)` | `PolygonGeometry.distance(between: IREdge, and: IREdge)` |
+| `PolygonGeometry.distance(from:toSegmentFrom:to:)` | `PolygonGeometry.distance(from: IRPoint, to: IREdge)` |
 
 ## Quick Start
 
@@ -136,7 +147,7 @@ case .unknown: throw MyError.unsupportedFormat
 
 ```swift
 import LayoutIR
-import GeometryOps
+import MaskGeometry
 
 let metal1 = Region(layer: 1, polygons: [poly1, poly2])
 let metal2 = Region(layer: 2, polygons: [poly3])
@@ -271,7 +282,7 @@ AutoCAD Drawing Exchange Format including:
 - Configurable circle approximation segments
 - Custom layer mapping (string layer names to numeric layer/datatype)
 
-### GeometryOps
+### MaskGeometry
 
 | Operation | API | Description |
 |-----------|-----|-------------|
@@ -305,7 +316,7 @@ DRC metrics: `.euclidean`, `.square` (Chebyshev L-infinity), `.projection`
        └─────┘└─────┘└──────┘└─────┘└─────┘└─────┘
 
        ┌──────────────┐    ┌─────────────────┐
-       │FormatDetector│    │  GeometryOps    │
+       │FormatDetector│    │  MaskGeometry    │
        └──────────────┘    └─────────────────┘
 ```
 

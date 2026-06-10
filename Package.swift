@@ -1,4 +1,4 @@
-// swift-tools-version: 6.2
+// swift-tools-version: 6.3
 import PackageDescription
 
 let package = Package(
@@ -13,7 +13,7 @@ let package = Package(
         .library(name: "LEF", targets: ["LEF"]),
         .library(name: "DEF", targets: ["DEF"]),
         .library(name: "DXF", targets: ["DXF"]),
-        .library(name: "GeometryOps", targets: ["GeometryOps"]),
+        .library(name: "MaskGeometry", targets: ["MaskGeometry"]),
         .library(name: "TechIR", targets: ["TechIR"]),
     ],
     targets: [
@@ -26,7 +26,7 @@ let package = Package(
         .target(name: "LEF", dependencies: ["LayoutIR", "TechIR"]),
         .target(name: "DEF", dependencies: ["LayoutIR"]),
         .target(name: "DXF", dependencies: ["LayoutIR"]),
-        .target(name: "GeometryOps", dependencies: ["LayoutIR"]),
+        .target(name: "MaskGeometry", dependencies: ["LayoutIR"]),
         .testTarget(name: "LayoutIRTests", dependencies: ["LayoutIR"]),
         .testTarget(name: "GDSIITests", dependencies: ["GDSII", "LayoutIR"]),
         .testTarget(name: "OASISTests", dependencies: ["OASIS", "GDSII", "LayoutIR"]),
@@ -36,7 +36,7 @@ let package = Package(
         .testTarget(name: "LEFTests", dependencies: ["LEF", "LayoutIR", "TechIR"]),
         .testTarget(name: "DEFTests", dependencies: ["DEF", "LayoutIR"]),
         .testTarget(name: "DXFTests", dependencies: ["DXF", "LayoutIR"]),
-        .testTarget(name: "GeometryOpsTests", dependencies: ["GeometryOps", "LayoutIR"]),
+        .testTarget(name: "MaskGeometryTests", dependencies: ["MaskGeometry", "LayoutIR"]),
         .testTarget(
             name: "GoldenCorpusTests",
             dependencies: ["LayoutIR", "GDSII", "OASIS", "LEF", "DEF", "FormatDetector"]

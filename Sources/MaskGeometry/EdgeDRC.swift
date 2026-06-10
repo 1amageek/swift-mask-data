@@ -19,7 +19,7 @@ enum EdgeDRC {
         var violations: [IREdgePair] = []
 
         for poly in region.polygons {
-            let edges = PolygonUtils.edges(of: poly.points)
+            let edges = PolygonGeometry.edges(of: poly.points)
             guard edges.count >= 3 else { continue }
 
             // Check distance between non-adjacent edges
@@ -45,9 +45,9 @@ enum EdgeDRC {
         var violations: [IREdgePair] = []
 
         for polyA in a.polygons {
-            let edgesA = PolygonUtils.edges(of: polyA.points)
+            let edgesA = PolygonGeometry.edges(of: polyA.points)
             for polyB in b.polygons {
-                let edgesB = PolygonUtils.edges(of: polyB.points)
+                let edgesB = PolygonGeometry.edges(of: polyB.points)
 
                 for ea in edgesA {
                     for eb in edgesB {
@@ -68,10 +68,10 @@ enum EdgeDRC {
         var violations: [IREdgePair] = []
 
         for innerPoly in inner.polygons {
-            let innerEdges = PolygonUtils.edges(of: innerPoly.points)
+            let innerEdges = PolygonGeometry.edges(of: innerPoly.points)
 
             for outerPoly in outer.polygons {
-                let outerEdges = PolygonUtils.edges(of: outerPoly.points)
+                let outerEdges = PolygonGeometry.edges(of: outerPoly.points)
 
                 for ie in innerEdges {
                     var minDist = Double.infinity
@@ -101,7 +101,7 @@ enum EdgeDRC {
         var violations: [IREdgePair] = []
 
         for poly in region.polygons {
-            let edges = PolygonUtils.edges(of: poly.points)
+            let edges = PolygonGeometry.edges(of: poly.points)
             guard edges.count >= 4 else { continue }
 
             for i in 0..<edges.count {
@@ -161,7 +161,7 @@ enum EdgeDRC {
         var violations: [IREdgePair] = []
 
         for poly in region.polygons {
-            let edges = PolygonUtils.edges(of: poly.points)
+            let edges = PolygonGeometry.edges(of: poly.points)
             for edge in edges {
                 let dx = Double(edge.p2.x - edge.p1.x)
                 let dy = Double(edge.p2.y - edge.p1.y)
@@ -184,10 +184,10 @@ enum EdgeDRC {
 
     // MARK: - Distance Calculations
 
-    private static func edgeDistance(_ e1: IREdge, _ e2: IREdge, metric: DRCMetric) -> Double {
+    static func edgeDistance(_ e1: IREdge, _ e2: IREdge, metric: DRCMetric) -> Double {
         switch metric {
         case .euclidean:
-            return PolygonUtils.segmentDistance(e1.p1, e1.p2, e2.p1, e2.p2)
+            return PolygonGeometry.distance(between: e1, and: e2)
         case .square:
             return chebyshevSegmentDistance(e1, e2)
         case .projection:

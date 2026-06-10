@@ -17,8 +17,8 @@ enum MinkowskiSizing {
     /// Size a polygon by the given amount with the specified corner mode.
     static func size(_ polygon: IRBoundary, by amount: Int32, cornerMode: CornerMode, layer: Int16) -> [IRBoundary] {
         var pts = polygon.points
-        PolygonUtils.ensureCCW(&pts)
-        PolygonUtils.ensureClosed(&pts)
+        PolygonGeometry.ensureCounterClockwise(&pts)
+        PolygonGeometry.ensureClosed(&pts)
 
         if pts.count > 1 && pts.last == pts.first {
             pts.removeLast()
@@ -39,8 +39,8 @@ enum MinkowskiSizing {
 
         // Validate area (negative amount should shrink)
         var result = offsetPoints
-        PolygonUtils.ensureClosed(&result)
-        let resultArea = PolygonUtils.area(result)
+        PolygonGeometry.ensureClosed(&result)
+        let resultArea = PolygonGeometry.area(result)
         if resultArea == 0 { return [] }
 
         return [IRBoundary(layer: layer, datatype: 0, points: result, properties: [])]

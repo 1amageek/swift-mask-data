@@ -1,6 +1,6 @@
 import Testing
 import LayoutIR
-@testable import GeometryOps
+@testable import MaskGeometry
 
 // MARK: - Helpers
 

@@ -1,6 +1,6 @@
 import Testing
 import LayoutIR
-@testable import GeometryOps
+@testable import MaskGeometry
 
 private func box(layer: Int16 = 1, x1: Int32, y1: Int32, x2: Int32, y2: Int32) -> IRBoundary {
     IRBoundary(layer: layer, datatype: 0, points: [

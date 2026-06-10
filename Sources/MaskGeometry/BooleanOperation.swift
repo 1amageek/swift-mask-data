@@ -1,5 +1,5 @@
 /// Boolean operation types for region operations.
-public enum BooleanOp: Sendable {
+public enum BooleanOperation: Sendable {
     case and
     case or
     case xor

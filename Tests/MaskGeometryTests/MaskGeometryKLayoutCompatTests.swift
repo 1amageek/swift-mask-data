@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import LayoutIR
-@testable import GeometryOps
+@testable import MaskGeometry
 
 // MARK: - Helpers
 
@@ -80,11 +80,11 @@ struct NonManhattanBooleanTests {
     @Test func manhattanDetection() {
         // Box should be detected as Manhattan
         let box = makeBox(x1: 0, y1: 0, x2: 100, y2: 100)
-        #expect(PolygonUtils.isManhattan(box.points))
+        #expect(PolygonGeometry.isManhattan(box.points))
 
         // Triangle is not Manhattan
         let tri = makeTriangle(x1: 0, y1: 0, x2: 100, y2: 0, x3: 50, y3: 100)
-        #expect(!PolygonUtils.isManhattan(tri.points))
+        #expect(!PolygonGeometry.isManhattan(tri.points))
     }
 
     @Test func manhattanBooleanRegression() {
@@ -100,10 +100,10 @@ struct NonManhattanBooleanTests {
     }
 }
 
-// MARK: - PolygonUtils
+// MARK: - PolygonGeometry
 
-@Suite("PolygonUtils")
-struct PolygonUtilsTests {
+@Suite("PolygonGeometry")
+struct PolygonGeometryTests {
 
     @Test func signedAreaCCW() {
         let pts: [IRPoint] = [
@@ -111,7 +111,7 @@ struct PolygonUtilsTests {
             IRPoint(x: 100, y: 100), IRPoint(x: 0, y: 100),
             IRPoint(x: 0, y: 0),
         ]
-        #expect(PolygonUtils.signedArea(pts) > 0) // CCW = positive
+        #expect(PolygonGeometry.signedArea(pts) > 0) // CCW = positive
     }
 
     @Test func signedAreaCW() {
@@ -120,42 +120,48 @@ struct PolygonUtilsTests {
             IRPoint(x: 100, y: 100), IRPoint(x: 100, y: 0),
             IRPoint(x: 0, y: 0),
         ]
-        #expect(PolygonUtils.signedArea(pts) < 0) // CW = negative
+        #expect(PolygonGeometry.signedArea(pts) < 0) // CW = negative
     }
 
-    @Test func ensureCCW() {
+    @Test func ensureCounterClockwise() {
         var pts: [IRPoint] = [
             IRPoint(x: 0, y: 0), IRPoint(x: 0, y: 100),
             IRPoint(x: 100, y: 100), IRPoint(x: 100, y: 0),
             IRPoint(x: 0, y: 0),
         ]
-        PolygonUtils.ensureCCW(&pts)
-        #expect(PolygonUtils.signedArea(pts) > 0)
+        PolygonGeometry.ensureCounterClockwise(&pts)
+        #expect(PolygonGeometry.signedArea(pts) > 0)
     }
 
-    @Test func pointInPolygon() {
+    @Test func containsPointInPolygon() {
         let square: [IRPoint] = [
             IRPoint(x: 0, y: 0), IRPoint(x: 100, y: 0),
             IRPoint(x: 100, y: 100), IRPoint(x: 0, y: 100),
             IRPoint(x: 0, y: 0),
         ]
-        #expect(PolygonUtils.pointInPolygon(IRPoint(x: 50, y: 50), polygon: square))
-        #expect(!PolygonUtils.pointInPolygon(IRPoint(x: 150, y: 50), polygon: square))
+        #expect(PolygonGeometry.contains(IRPoint(x: 50, y: 50), in: square))
+        #expect(!PolygonGeometry.contains(IRPoint(x: 150, y: 50), in: square))
     }
 
-    @Test func segmentIntersection() {
+    @Test func intersectionOfSegments() {
         let p1 = IRPoint(x: 0, y: 0), p2 = IRPoint(x: 100, y: 100)
         let p3 = IRPoint(x: 100, y: 0), p4 = IRPoint(x: 0, y: 100)
-        let inter = PolygonUtils.segmentIntersection(p1, p2, p3, p4)
+        let inter = PolygonGeometry.intersection(
+            of: IREdge(p1: p1, p2: p2),
+            and: IREdge(p1: p3, p2: p4)
+        )
         #expect(inter != nil)
         #expect(inter!.x == 50)
         #expect(inter!.y == 50)
     }
 
-    @Test func noSegmentIntersection() {
+    @Test func noIntersectionOfSegments() {
         let p1 = IRPoint(x: 0, y: 0), p2 = IRPoint(x: 50, y: 0)
         let p3 = IRPoint(x: 0, y: 10), p4 = IRPoint(x: 50, y: 10)
-        let inter = PolygonUtils.segmentIntersection(p1, p2, p3, p4)
+        let inter = PolygonGeometry.intersection(
+            of: IREdge(p1: p1, p2: p2),
+            and: IREdge(p1: p3, p2: p4)
+        )
         #expect(inter == nil)
     }
 
@@ -164,14 +170,14 @@ struct PolygonUtilsTests {
             IRPoint(x: 0, y: 0), IRPoint(x: 100, y: 0),
             IRPoint(x: 100, y: 100), IRPoint(x: 0, y: 0),
         ]
-        let edges = PolygonUtils.edges(of: pts)
+        let edges = PolygonGeometry.edges(of: pts)
         #expect(edges.count == 3)
     }
 
-    @Test func segmentDistance() {
-        let dist = PolygonUtils.segmentDistance(
-            IRPoint(x: 0, y: 0), IRPoint(x: 100, y: 0),
-            IRPoint(x: 0, y: 50), IRPoint(x: 100, y: 50)
+    @Test func computesDistanceForSegments() {
+        let dist = PolygonGeometry.distance(
+            between: IREdge(p1: IRPoint(x: 0, y: 0), p2: IRPoint(x: 100, y: 0)),
+            and: IREdge(p1: IRPoint(x: 0, y: 50), p2: IRPoint(x: 100, y: 50))
         )
         #expect(abs(dist - 50.0) < 0.01)
     }
@@ -322,8 +328,8 @@ struct PolygonClippingTests {
         if let pts = result {
             // Should be a square 50..100 x 50..100
             var closed = pts
-            PolygonUtils.ensureClosed(&closed)
-            let area = PolygonUtils.area(closed)
+            PolygonGeometry.ensureClosed(&closed)
+            let area = PolygonGeometry.area(closed)
             #expect(area == 2500)
         }
     }
@@ -358,8 +364,8 @@ struct PolygonClippingTests {
         if let pts = result {
             #expect(pts.count >= 3)
             var closed = pts
-            PolygonUtils.ensureClosed(&closed)
-            #expect(PolygonUtils.area(closed) > 0)
+            PolygonGeometry.ensureClosed(&closed)
+            #expect(PolygonGeometry.area(closed) > 0)
         }
     }
 }

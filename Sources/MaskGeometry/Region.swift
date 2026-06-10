@@ -18,7 +18,7 @@ public struct Region: Hashable, Sendable {
 
     /// Total signed area of all polygons (shoelace formula).
     public var area: Int64 {
-        polygons.reduce(0) { $0 + PolygonUtils.area($1.points) }
+        polygons.reduce(0) { $0 + PolygonGeometry.area($1.points) }
     }
 
     /// Total number of edges across all polygons.
@@ -73,6 +73,24 @@ public struct Region: Hashable, Sendable {
         RegionSizing.size(self, by: amount, cornerMode: cornerMode)
     }
 
+    // MARK: - Connectivity
+
+    /// Groups polygons into connected components (overlap or shared edge of
+    /// positive length connects; corner-only contact does not).
+    public func connectedComponents() -> [Region] {
+        RegionConnectivity.connectedComponents(of: self)
+    }
+
+    /// Enclosed holes of the region, returned as filled regions.
+    public func holes() -> [Region] {
+        RegionConnectivity.holes(of: self)
+    }
+
+    /// Boundary-inclusive point containment test.
+    public func contains(_ point: IRPoint) -> Bool {
+        RegionConnectivity.contains(self, point: point)
+    }
+
     // MARK: - DRC
 
     public func widthViolations(minWidth: Int32) -> [IREdgePair] {
@@ -89,6 +107,17 @@ public struct Region: Hashable, Sendable {
 
     public func spaceViolations(to other: Region, minSpace: Int32, metric: DRCMetric) -> [IREdgePair] {
         DRCCheck.spaceCheck(self, other, minSpace: minSpace, metric: metric)
+    }
+
+    /// Net-blind self-spacing: merges the region first so touching or
+    /// overlapping polygons never flag, then reports exterior gaps narrower
+    /// than `minSpace` (including notches and diagonal corner gaps).
+    public func selfSpaceViolations(minSpace: Int32) -> [IREdgePair] {
+        DRCCheck.selfSpaceCheck(self, minSpace: minSpace)
+    }
+
+    public func selfSpaceViolations(minSpace: Int32, metric: DRCMetric) -> [IREdgePair] {
+        DRCCheck.selfSpaceCheck(self, minSpace: minSpace, metric: metric)
     }
 
     public func enclosureViolations(inner: Region, minEnclosure: Int32) -> [IREdgePair] {

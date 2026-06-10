@@ -1,6 +1,6 @@
 import Testing
 import LayoutIR
-@testable import GeometryOps
+@testable import MaskGeometry
 
 // MARK: - Helper
 
@@ -9,6 +9,29 @@ private func box(layer: Int16 = 1, x1: Int32, y1: Int32, x2: Int32, y2: Int32) -
         IRPoint(x: x1, y: y1), IRPoint(x: x2, y: y1),
         IRPoint(x: x2, y: y2), IRPoint(x: x1, y: y2),
         IRPoint(x: x1, y: y1),
+    ], properties: [])
+}
+
+private func lShape(layer: Int16 = 1) -> IRBoundary {
+    IRBoundary(layer: layer, datatype: 0, points: [
+        IRPoint(x: 0, y: 0),
+        IRPoint(x: 100, y: 0),
+        IRPoint(x: 100, y: 40),
+        IRPoint(x: 40, y: 40),
+        IRPoint(x: 40, y: 100),
+        IRPoint(x: 0, y: 100),
+        IRPoint(x: 0, y: 0),
+    ], properties: [])
+}
+
+private func boxWithCollinearVertex(layer: Int16 = 1) -> IRBoundary {
+    IRBoundary(layer: layer, datatype: 0, points: [
+        IRPoint(x: 0, y: 0),
+        IRPoint(x: 100, y: 0),
+        IRPoint(x: 100, y: 10),
+        IRPoint(x: 100, y: 100),
+        IRPoint(x: 0, y: 100),
+        IRPoint(x: 0, y: 0),
     ], properties: [])
 }
 
@@ -105,6 +128,26 @@ struct BooleanEdgeCaseTests {
         #expect(result.area == 30000)
     }
 
+    @Test func orPreservesConcaveManhattanArea() {
+        let region = Region(layer: 1, polygons: [lShape()])
+        let result = region.or(Region(layer: 1))
+        #expect(result.area == 6400)
+    }
+
+    @Test func andDoesNotFillConcaveManhattanInterior() {
+        let region = Region(layer: 1, polygons: [lShape()])
+        let missingCorner = Region(layer: 1, polygons: [box(x1: 60, y1: 60, x2: 90, y2: 90)])
+        let result = region.and(missingCorner)
+        #expect(result.isEmpty)
+    }
+
+    @Test func notRemovesConcaveManhattanPortion() {
+        let region = Region(layer: 1, polygons: [lShape()])
+        let lowerLeft = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 40, y2: 40)])
+        let result = region.not(lowerLeft)
+        #expect(result.area == 4800)
+    }
+
     @Test func touchingRectanglesOr() {
         // Two rectangles that share an edge
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
@@ -199,6 +242,18 @@ struct DRCEdgeCaseTests {
         #expect(violations.count == 2) // Both 30 and 40 < 50
     }
 
+    @Test func widthDetectsConcaveManhattanNeck() {
+        let r = Region(layer: 1, polygons: [lShape()])
+        let violations = r.widthViolations(minWidth: 50)
+        #expect(violations.count == 2)
+    }
+
+    @Test func widthIgnoresCollinearVertexBandSplits() {
+        let r = Region(layer: 1, polygons: [boxWithCollinearVertex()])
+        let violations = r.widthViolations(minWidth: 50)
+        #expect(violations.isEmpty)
+    }
+
     @Test func spaceExactlyAtLimit() {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 150, y1: 0, x2: 250, y2: 100)])
@@ -221,6 +276,13 @@ struct DRCEdgeCaseTests {
         let violations = a.spaceViolations(to: b, minSpace: 50)
         // They don't overlap in Y, so no face-to-face violation
         #expect(violations.isEmpty)
+    }
+
+    @Test func spaceDetectsConcaveManhattanInteriorGap() {
+        let a = Region(layer: 1, polygons: [lShape()])
+        let b = Region(layer: 1, polygons: [box(x1: 60, y1: 60, x2: 90, y2: 90)])
+        let violations = a.spaceViolations(to: b, minSpace: 50)
+        #expect(violations.count == 2)
     }
 
     @Test func enclosureExactlyAtLimit() {
@@ -247,11 +309,25 @@ struct DRCEdgeCaseTests {
     }
 
     @Test func enclosureInnerNotContained() {
-        // Inner extends beyond outer → no enclosure check
+        // Inner extends beyond outer → the uncovered part is a violation,
+        // never a silent pass.
         let outer = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let inner = Region(layer: 2, polygons: [box(x1: 50, y1: 50, x2: 200, y2: 200)])
         let violations = outer.enclosureViolations(inner: inner, minEnclosure: 10)
-        #expect(violations.isEmpty) // Not contained, so no check
+        #expect(!violations.isEmpty)
+    }
+
+    @Test func enclosureDoesNotTreatConcaveBBoxAsContainment() {
+        // Inner sits in the concave notch of the L: inside the outer's
+        // bounding box but outside its actual geometry → must be reported
+        // as uncovered, not measured against the bounding box.
+        let outer = Region(layer: 1, polygons: [lShape()])
+        let inner = Region(layer: 2, polygons: [box(x1: 60, y1: 60, x2: 90, y2: 90)])
+        let violations = outer.enclosureViolations(inner: inner, minEnclosure: 10)
+        #expect(violations.count == 1)
+        let bb = violations.first
+        #expect(bb?.edge1.p1.x == 60)
+        #expect(bb?.edge2.p1.x == 90)
     }
 
     @Test func multiplePolygonsDRC() {

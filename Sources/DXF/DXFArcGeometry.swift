@@ -1,8 +1,8 @@
 import Foundation
 import LayoutIR
 
-/// Utility functions for arc and circle polygon approximation in DXF.
-enum DXFArcUtils {
+/// Arc and circle polygon approximation routines for DXF.
+enum DXFArcGeometry {
 
     /// Approximates a circular arc as a polyline.
     /// - Parameters:

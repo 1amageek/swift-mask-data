@@ -1,7 +1,7 @@
 import LayoutIR
 
-/// Geometry utility functions for polygon operations.
-public enum PolygonUtils {
+/// Polygon geometry queries and normalization routines.
+public enum PolygonGeometry {
 
     /// Returns the edges of a polygon (consecutive point pairs).
     public static func edges(of points: [IRPoint]) -> [IREdge] {
@@ -32,16 +32,17 @@ public enum PolygonUtils {
     }
 
     /// Ensures points are in counter-clockwise order.
-    public static func ensureCCW(_ points: inout [IRPoint]) {
+    public static func ensureCounterClockwise(_ points: inout [IRPoint]) {
         if signedArea(points) < 0 {
             let hasClosed = points.count > 1 && points.first == points.last
             if hasClosed {
-                // Reverse in-place excluding the closing point, then fix it
+                // Reverse in-place excluding the closing point, then fix it.
                 let lastIdx = points.count - 1
                 var lo = 0, hi = lastIdx - 1
                 while lo < hi {
                     points.swapAt(lo, hi)
-                    lo += 1; hi -= 1
+                    lo += 1
+                    hi -= 1
                 }
                 points[lastIdx] = points[0]
             } else {
@@ -58,40 +59,38 @@ public enum PolygonUtils {
         }
     }
 
-    /// Tests whether two line segments (p1-p2) and (p3-p4) intersect.
-    /// Returns the intersection point if they do.
-    public static func segmentIntersection(
-        _ p1: IRPoint, _ p2: IRPoint,
-        _ p3: IRPoint, _ p4: IRPoint
-    ) -> IRPoint? {
+    /// Returns the intersection point for two edges when they intersect.
+    public static func intersection(of first: IREdge, and second: IREdge) -> IRPoint? {
         // Using Int64 cross products for exact arithmetic
-        let d1x = Int64(p2.x) - Int64(p1.x)
-        let d1y = Int64(p2.y) - Int64(p1.y)
-        let d2x = Int64(p4.x) - Int64(p3.x)
-        let d2y = Int64(p4.y) - Int64(p3.y)
+        let d1x = Int64(first.p2.x) - Int64(first.p1.x)
+        let d1y = Int64(first.p2.y) - Int64(first.p1.y)
+        let d2x = Int64(second.p2.x) - Int64(second.p1.x)
+        let d2y = Int64(second.p2.y) - Int64(second.p1.y)
 
         let denom = d1x * d2y - d1y * d2x
         if denom == 0 { return nil } // Parallel or coincident
 
-        let t_num = (Int64(p3.x) - Int64(p1.x)) * d2y - (Int64(p3.y) - Int64(p1.y)) * d2x
-        let u_num = (Int64(p3.x) - Int64(p1.x)) * d1y - (Int64(p3.y) - Int64(p1.y)) * d1x
+        let tNumerator = (Int64(second.p1.x) - Int64(first.p1.x)) * d2y
+            - (Int64(second.p1.y) - Int64(first.p1.y)) * d2x
+        let uNumerator = (Int64(second.p1.x) - Int64(first.p1.x)) * d1y
+            - (Int64(second.p1.y) - Int64(first.p1.y)) * d1x
 
         // Check if 0 <= t <= 1 and 0 <= u <= 1
         if denom > 0 {
-            if t_num < 0 || t_num > denom { return nil }
-            if u_num < 0 || u_num > denom { return nil }
+            if tNumerator < 0 || tNumerator > denom { return nil }
+            if uNumerator < 0 || uNumerator > denom { return nil }
         } else {
-            if t_num > 0 || t_num < denom { return nil }
-            if u_num > 0 || u_num < denom { return nil }
+            if tNumerator > 0 || tNumerator < denom { return nil }
+            if uNumerator > 0 || uNumerator < denom { return nil }
         }
 
-        let ix = Double(p1.x) + Double(t_num) / Double(denom) * Double(d1x)
-        let iy = Double(p1.y) + Double(t_num) / Double(denom) * Double(d1y)
+        let ix = Double(first.p1.x) + Double(tNumerator) / Double(denom) * Double(d1x)
+        let iy = Double(first.p1.y) + Double(tNumerator) / Double(denom) * Double(d1y)
         return IRPoint(x: Int32(ix.rounded()), y: Int32(iy.rounded()))
     }
 
     /// Point-in-polygon test using ray casting.
-    public static func pointInPolygon(_ point: IRPoint, polygon: [IRPoint]) -> Bool {
+    public static func contains(_ point: IRPoint, in polygon: [IRPoint]) -> Bool {
         let n = polygon.last == polygon.first ? polygon.count - 1 : polygon.count
         guard n >= 3 else { return false }
 
@@ -141,28 +140,25 @@ public enum PolygonUtils {
         return true
     }
 
-    /// Minimum distance between two line segments.
-    public static func segmentDistance(
-        _ p1: IRPoint, _ p2: IRPoint,
-        _ p3: IRPoint, _ p4: IRPoint
-    ) -> Double {
+    /// Minimum distance between two edges.
+    public static func distance(between first: IREdge, and second: IREdge) -> Double {
         // Check if segments intersect
-        if segmentIntersection(p1, p2, p3, p4) != nil { return 0 }
+        if intersection(of: first, and: second) != nil { return 0 }
 
         // Minimum of point-to-segment distances
         return min(
-            pointToSegmentDistance(p1, p3, p4),
-            pointToSegmentDistance(p2, p3, p4),
-            pointToSegmentDistance(p3, p1, p2),
-            pointToSegmentDistance(p4, p1, p2)
+            distance(from: first.p1, to: second),
+            distance(from: first.p2, to: second),
+            distance(from: second.p1, to: first),
+            distance(from: second.p2, to: first)
         )
     }
 
-    /// Distance from a point to a line segment.
-    public static func pointToSegmentDistance(_ point: IRPoint, _ seg1: IRPoint, _ seg2: IRPoint) -> Double {
+    /// Distance from a point to an edge.
+    public static func distance(from point: IRPoint, to edge: IREdge) -> Double {
         let px = Double(point.x), py = Double(point.y)
-        let ax = Double(seg1.x), ay = Double(seg1.y)
-        let bx = Double(seg2.x), by = Double(seg2.y)
+        let ax = Double(edge.p1.x), ay = Double(edge.p1.y)
+        let bx = Double(edge.p2.x), by = Double(edge.p2.y)
 
         let dx = bx - ax
         let dy = by - ay

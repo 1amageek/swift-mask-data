@@ -6,18 +6,23 @@ import LayoutIR
 enum EdgeProcessor {
 
     /// Perform a boolean operation on two sets of polygons.
-    static func booleanOp(_ op: BooleanOp, a: [IRBoundary], b: [IRBoundary], layer: Int16) -> [IRBoundary] {
-        switch op {
+    static func perform(
+        _ operation: BooleanOperation,
+        on first: [IRBoundary],
+        _ second: [IRBoundary],
+        layer: Int16
+    ) -> [IRBoundary] {
+        switch operation {
         case .and:
-            return intersect(a, b, layer: layer)
+            return intersect(first, second, layer: layer)
         case .or:
-            return union(a, b, layer: layer)
+            return union(first, second, layer: layer)
         case .xor:
-            let u = union(a, b, layer: layer)
-            let inter = intersect(a, b, layer: layer)
+            let u = union(first, second, layer: layer)
+            let inter = intersect(first, second, layer: layer)
             return subtract(u, inter, layer: layer)
         case .not:
-            return subtract(a, b, layer: layer)
+            return subtract(first, second, layer: layer)
         }
     }
 
@@ -30,8 +35,8 @@ enum EdgeProcessor {
                 if let clipped = clipPolygon(subject: polyA.points, clip: polyB.points) {
                     if clipped.count >= 3 {
                         var pts = clipped
-                        PolygonUtils.ensureClosed(&pts)
-                        if PolygonUtils.area(pts) > 0 {
+                        PolygonGeometry.ensureClosed(&pts)
+                        if PolygonGeometry.area(pts) > 0 {
                             result.append(IRBoundary(layer: layer, datatype: 0, points: pts, properties: []))
                         }
                     }
@@ -96,14 +101,14 @@ enum EdgeProcessor {
         // Check if B fully contains A
         let aPts = a.points
         let aCount = (aPts.count > 1 && aPts.last == aPts.first) ? aPts.count - 1 : aPts.count
-        let allInside = (0..<aCount).allSatisfy { PolygonUtils.pointInPolygon(aPts[$0], polygon: b.points) }
+        let allInside = (0..<aCount).allSatisfy { PolygonGeometry.contains(aPts[$0], in: b.points) }
         if allInside { return [] }
 
         // Simple case: approximate by computing the area outside B
         // Use the intersection to subtract
         if let inter = clipPolygon(subject: a.points, clip: b.points) {
-            let interArea = PolygonUtils.area(inter)
-            let aArea = PolygonUtils.area(a.points)
+            let interArea = PolygonGeometry.area(inter)
+            let aArea = PolygonGeometry.area(a.points)
             if interArea == 0 { return [a] }
             if interArea >= aArea { return [] }
         }
@@ -134,7 +139,7 @@ enum EdgeProcessor {
         guard subjectOpen.count >= 3, clipPts.count >= 3 else { return nil }
 
         // Ensure clip polygon is CCW
-        if PolygonUtils.signedArea(clipPts) < 0 {
+        if PolygonGeometry.signedArea(clipPts) < 0 {
             clipPts.reverse()
         }
 
@@ -204,8 +209,8 @@ enum EdgeProcessor {
     }
 
     private static func polygonsOverlap(_ a: IRBoundary, _ b: IRBoundary) -> Bool {
-        guard let bbA = PolygonUtils.boundingBox(of: a.points),
-              let bbB = PolygonUtils.boundingBox(of: b.points) else { return false }
+        guard let bbA = PolygonGeometry.boundingBox(of: a.points),
+              let bbB = PolygonGeometry.boundingBox(of: b.points) else { return false }
         return bbA.minX < bbB.maxX && bbA.maxX > bbB.minX && bbA.minY < bbB.maxY && bbA.maxY > bbB.minY
     }
 
@@ -220,7 +225,7 @@ enum EdgeProcessor {
         allPoints.append(contentsOf: a.points[0..<aEnd])
         allPoints.append(contentsOf: b.points[0..<bEnd])
 
-        if PolygonUtils.isManhattan(a.points) && PolygonUtils.isManhattan(b.points) {
+        if PolygonGeometry.isManhattan(a.points) && PolygonGeometry.isManhattan(b.points) {
             return nil // Let the scanline handler deal with Manhattan
         }
 
@@ -228,7 +233,7 @@ enum EdgeProcessor {
         let hull = convexHull(allPoints)
         guard hull.count >= 3 else { return nil }
         var pts = hull
-        PolygonUtils.ensureClosed(&pts)
+        PolygonGeometry.ensureClosed(&pts)
         return IRBoundary(layer: layer, datatype: 0, points: pts, properties: [])
     }
 

@@ -1,9 +1,9 @@
 import Testing
 import LayoutIR
-@testable import GeometryOps
+@testable import MaskGeometry
 
-@Suite("GeometryOps Bug Fixes")
-struct GeometryOpsBugFixTests {
+@Suite("MaskGeometry Bug Fixes")
+struct MaskGeometryBugFixTests {
 
     @Test func testOctagonalSizingCorrectArea() {
         // Create a square polygon 0,0 -> 1000,1000

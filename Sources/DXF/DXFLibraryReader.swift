@@ -314,7 +314,7 @@ public enum DXFLibraryReader {
 
         guard radius > 0 else { return nil }
 
-        let points = DXFArcUtils.approximateCircle(cx: cx, cy: cy, radius: radius, segments: segments, dbu: dbu)
+        let points = DXFArcGeometry.approximateCircle(cx: cx, cy: cy, radius: radius, segments: segments, dbu: dbu)
         guard points.count >= 3 else { return nil }
         return .boundary(IRBoundary(layer: layer, datatype: 0, points: points, properties: []))
     }
@@ -335,7 +335,7 @@ public enum DXFLibraryReader {
 
         guard radius > 0 else { return nil }
 
-        let points = DXFArcUtils.approximateArc(
+        let points = DXFArcGeometry.approximateArc(
             cx: cx, cy: cy, radius: radius,
             startAngleDeg: startAngle, endAngleDeg: endAngle,
             segments: segments, dbu: dbu
@@ -370,7 +370,7 @@ public enum DXFLibraryReader {
         let majorLen = (majorDx * majorDx + majorDy * majorDy).squareRoot()
         guard majorLen > 0 else { return nil }
 
-        let points = DXFArcUtils.approximateEllipse(
+        let points = DXFArcGeometry.approximateEllipse(
             cx: cx, cy: cy,
             majorDx: majorDx, majorDy: majorDy,
             ratio: ratio,
@@ -534,7 +534,7 @@ public enum DXFLibraryReader {
                                 }
                                 idx += 1
                             }
-                            let arcPts = DXFArcUtils.approximateArc(
+                            let arcPts = DXFArcGeometry.approximateArc(
                                 cx: cx, cy: cy, radius: r,
                                 startAngleDeg: sa, endAngleDeg: ea,
                                 segments: segments, dbu: dbu
@@ -560,7 +560,7 @@ public enum DXFLibraryReader {
                                 }
                                 idx += 1
                             }
-                            let ellPts = DXFArcUtils.approximateEllipse(
+                            let ellPts = DXFArcGeometry.approximateEllipse(
                                 cx: ecx, cy: ecy,
                                 majorDx: emx, majorDy: emy,
                                 ratio: eRatio,
@@ -778,7 +778,7 @@ public enum DXFLibraryReader {
             if v.bulge != 0 {
                 let nextIdx = (idx + 1) % vertices.count
                 let next = vertices[nextIdx]
-                let arcPts = DXFArcUtils.bulgeToArcPoints(
+                let arcPts = DXFArcGeometry.bulgeToArcPoints(
                     from: (v.x, v.y),
                     to: (next.x, next.y),
                     bulge: v.bulge,
