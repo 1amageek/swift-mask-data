@@ -11,7 +11,7 @@ import LayoutIR
 struct BandGrid {
 
     private let cellSize: Int64
-    private var cells: [UInt64: [Int32]] = [:]
+    private let cells: [UInt64: [Int32]]
 
     /// Cell size adapts to both the query margin and the band sizes: cells
     /// several margins wide keep query fanout low, while cells no smaller
@@ -30,27 +30,40 @@ struct BandGrid {
             }
             meanDimension = Int64((total / Double(bands.count)).rounded(.up))
         }
-        cellSize = max(Int64(max(margin, 1)) * 8, meanDimension, 1)
+        let size = max(Int64(max(margin, 1)) * 8, meanDimension, 1)
+        cellSize = size
+        // Build into a local table and assign once: inserting through a
+        // self-captured closure denies the optimizer unique ownership of
+        // the stored dictionary, forcing a copy-on-write of the whole
+        // table per insert and turning construction quadratic.
+        var table: [UInt64: [Int32]] = [:]
         for (index, band) in bands.enumerated() {
-            forEachCell(
-                xMin: Int64(band.xMin), xMax: Int64(band.xMax),
-                yMin: Int64(band.yMin), yMax: Int64(band.yMax)
-            ) { key in
-                cells[key, default: []].append(Int32(index))
+            let cxMin = Self.floorDiv(Int64(band.xMin), by: size)
+            let cxMax = Self.floorDiv(Int64(band.xMax), by: size)
+            let cyMin = Self.floorDiv(Int64(band.yMin), by: size)
+            let cyMax = Self.floorDiv(Int64(band.yMax), by: size)
+            for cx in cxMin...cxMax {
+                for cy in cyMin...cyMax {
+                    table[Self.cellKey(cx, cy), default: []].append(Int32(index))
+                }
             }
         }
+        cells = table
     }
 
     /// Ascending, duplicate-free indices of bands whose cells intersect the
     /// probe band expanded by `margin`.
     func candidateIndices(near band: RegionBoolean.Band, margin: Int32) -> [Int] {
         var found: [Int32] = []
-        forEachCell(
-            xMin: Int64(band.xMin) - Int64(margin), xMax: Int64(band.xMax) + Int64(margin),
-            yMin: Int64(band.yMin) - Int64(margin), yMax: Int64(band.yMax) + Int64(margin)
-        ) { key in
-            if let indices = cells[key] {
-                found.append(contentsOf: indices)
+        let cxMin = Self.floorDiv(Int64(band.xMin) - Int64(margin), by: cellSize)
+        let cxMax = Self.floorDiv(Int64(band.xMax) + Int64(margin), by: cellSize)
+        let cyMin = Self.floorDiv(Int64(band.yMin) - Int64(margin), by: cellSize)
+        let cyMax = Self.floorDiv(Int64(band.yMax) + Int64(margin), by: cellSize)
+        for cx in cxMin...cxMax {
+            for cy in cyMin...cyMax {
+                if let indices = cells[Self.cellKey(cx, cy)] {
+                    found.append(contentsOf: indices)
+                }
             }
         }
         found.sort()
@@ -64,27 +77,13 @@ struct BandGrid {
         return result
     }
 
-    private func forEachCell(
-        xMin: Int64, xMax: Int64,
-        yMin: Int64, yMax: Int64,
-        _ body: (UInt64) -> Void
-    ) {
-        let cxMin = floorDiv(xMin), cxMax = floorDiv(xMax)
-        let cyMin = floorDiv(yMin), cyMax = floorDiv(yMax)
-        for cx in cxMin...cxMax {
-            for cy in cyMin...cyMax {
-                body(cellKey(cx, cy))
-            }
-        }
-    }
-
-    private func floorDiv(_ value: Int64) -> Int64 {
+    private static func floorDiv(_ value: Int64, by cellSize: Int64) -> Int64 {
         value >= 0 ? value / cellSize : (value - cellSize + 1) / cellSize
     }
 
     /// Coordinates are Int32 and cells are ≥ 8 dbu, so cell coordinates fit
     /// comfortably in 32 bits each.
-    private func cellKey(_ cx: Int64, _ cy: Int64) -> UInt64 {
+    private static func cellKey(_ cx: Int64, _ cy: Int64) -> UInt64 {
         (UInt64(UInt32(truncatingIfNeeded: cx)) << 32) | UInt64(UInt32(truncatingIfNeeded: cy))
     }
 }

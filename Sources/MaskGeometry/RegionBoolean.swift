@@ -84,17 +84,36 @@ enum RegionBoolean {
     }
 
     /// Bands of the union coverage of all polygons: per scanline row, abutting
-    /// and overlapping x-intervals are coalesced. Unlike `decompose`, the seam
-    /// between two stacked polygons of the same feature never splits a row's
-    /// coverage, so a band edge here is always a true region boundary.
+    /// and overlapping x-intervals are coalesced, then vertically adjacent
+    /// rows with the identical x-interval are merged. Unlike `decompose`, the
+    /// seam between two stacked polygons of the same feature never splits a
+    /// row's coverage, so a band edge here is always a true region boundary.
+    /// The vertical merge makes the result canonical: the global sweep splits
+    /// rows at every y-coordinate in the region, so without it the bands of
+    /// one connected component would fragment differently depending on what
+    /// unrelated geometry happens to share the region.
     static func unionBands(_ region: Region) -> [Band] {
-        var result: [Band] = []
+        var rows: [Band] = []
         ScanlineSweep.sweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
             for interval in unionIntervals(intervals) {
-                result.append(Band(xMin: interval.lo, xMax: interval.hi, yMin: yMin, yMax: yMax))
+                rows.append(Band(xMin: interval.lo, xMax: interval.hi, yMin: yMin, yMax: yMax))
             }
         }
-        return result
+        guard rows.count > 1 else { return rows }
+        rows.sort {
+            ($0.xMin, $0.xMax, $0.yMin) < ($1.xMin, $1.xMax, $1.yMin)
+        }
+        var merged: [Band] = [rows[0]]
+        for index in 1..<rows.count {
+            let current = rows[index]
+            let last = merged[merged.count - 1]
+            if last.xMin == current.xMin && last.xMax == current.xMax && last.yMax == current.yMin {
+                merged[merged.count - 1].yMax = current.yMax
+            } else {
+                merged.append(current)
+            }
+        }
+        return merged
     }
 
     private static func decompose(_ polygon: IRBoundary) -> [Band] {

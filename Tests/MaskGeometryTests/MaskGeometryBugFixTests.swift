@@ -82,4 +82,43 @@ struct MaskGeometryBugFixTests {
         let mixedViolations = mixedRegion.gridViolations(gridX: 10, gridY: 10)
         #expect(mixedViolations.isEmpty, "All vertices on 10-unit grid should have no violations")
     }
+
+    /// Regression: `unionBands` must be canonical. The scanline sweep splits
+    /// rows at every y-coordinate in the region, so without the vertical
+    /// re-merge a feature's bands would fragment differently depending on
+    /// what unrelated geometry happens to share the region — downstream
+    /// width/spacing checks then report different marker boxes for the same
+    /// feature.
+    @Test func testUnionBandsCanonicalAgainstUnrelatedRows() {
+        func rect(_ xMin: Int32, _ yMin: Int32, _ xMax: Int32, _ yMax: Int32) -> IRBoundary {
+            IRBoundary(layer: 1, datatype: 0, points: [
+                IRPoint(x: xMin, y: yMin), IRPoint(x: xMax, y: yMin),
+                IRPoint(x: xMax, y: yMax), IRPoint(x: xMin, y: yMax),
+                IRPoint(x: xMin, y: yMin),
+            ], properties: [])
+        }
+        let tall = rect(0, 0, 100, 1000)
+        // Far-away small rectangle whose y-extent (300...400) splits the
+        // global sweep rows inside the tall rectangle's span.
+        let splitter = rect(5000, 300, 5100, 400)
+
+        let bands = { (region: Region) in
+            RegionBoolean.unionBands(region).map {
+                [$0.xMin, $0.xMax, $0.yMin, $0.yMax]
+            }.sorted { $0.lexicographicallyPrecedes($1) }
+        }
+
+        let alone = bands(Region(layer: 1, polygons: [tall]))
+        let together = bands(Region(layer: 1, polygons: [tall, splitter]))
+        #expect(alone == [[0, 100, 0, 1000]], "a lone rectangle must be exactly one band")
+        #expect(
+            together == [[0, 100, 0, 1000], [5000, 5100, 300, 400]],
+            "unrelated rows must not fragment another feature's bands"
+        )
+
+        // Two stacked abutting rectangles with the same x-extent are one
+        // feature and must merge into a single band.
+        let stacked = Region(layer: 1, polygons: [rect(0, 0, 100, 500), rect(0, 500, 100, 1000)])
+        #expect(bands(stacked) == [[0, 100, 0, 1000]], "stacked same-x rows must merge")
+    }
 }
