@@ -305,6 +305,72 @@ struct OASISBugFixTests {
     }
   }
 
+  // MARK: - Placement non-grid repetition expansion
+
+  @Test func testPlacementNonGridRepetitionExpandsIntoIndividualPlacements() throws {
+    // A PLACEMENT with a non-grid repetition (uniform row) must expand
+    // into one cell reference per occurrence — only grid repetitions
+    // have a compact IRArrayRef form. Dropping the repetition silently
+    // lost every occurrence but the first.
+    var w = OASISWriter()
+    w.writeMagic()
+
+    w.writeByte(OASISRecordType.start.rawValue)
+    try w.writeAString("1.0")
+    w.writeReal(0.001)
+    w.writeUnsignedInteger(0)
+
+    w.writeByte(OASISRecordType.cellname.rawValue)
+    try w.writeAString("UNIT")
+    w.writeByte(OASISRecordType.cellname.rawValue)
+    try w.writeAString("PTOP")
+
+    // UNIT: one rectangle so the cell exists with content.
+    w.writeByte(OASISRecordType.cellRef.rawValue)
+    w.writeUnsignedInteger(0)
+    w.writeByte(OASISRecordType.rectangle.rawValue)
+    w.writeByte(0b0111_1111)
+    w.writeUnsignedInteger(1)  // layer
+    w.writeUnsignedInteger(0)  // datatype
+    w.writeUnsignedInteger(10)  // W
+    w.writeUnsignedInteger(10)  // H
+    w.writeSignedInteger(0)
+    w.writeSignedInteger(0)
+    w.writeUnsignedInteger(2)  // repetition type 2 (uniform row)
+    w.writeUnsignedInteger(0)  // count - 2 = 0 -> 2 copies
+    w.writeUnsignedInteger(20)
+
+    // PTOP: placement of UNIT with uniform-row repetition, 3 copies.
+    w.writeByte(OASISRecordType.cellRef.rawValue)
+    w.writeUnsignedInteger(1)
+    w.writeByte(OASISRecordType.placement.rawValue)
+    // info: C(0x80) explicit cell, N(0x40) by reference, X(0x20),
+    // Y(0x10), R(0x08) repetition.
+    w.writeByte(0xF8)
+    w.writeUnsignedInteger(0)  // cell-name ref -> UNIT
+    w.writeSignedInteger(50)  // X
+    w.writeSignedInteger(7)  // Y
+    w.writeUnsignedInteger(2)  // repetition type 2 (uniform row)
+    w.writeUnsignedInteger(1)  // count - 2 = 1 -> 3 copies
+    w.writeUnsignedInteger(100)  // spacing
+
+    w.writeByte(OASISRecordType.end.rawValue)
+    try w.writeAString("")
+    w.writeUnsignedInteger(0)
+
+    let result = try OASISLibraryReader.read(w.data)
+    let top = try #require(result.cell(named: "PTOP"))
+
+    let refs = top.elements.compactMap { element -> IRCellRef? in
+      if case .cellRef(let ref) = element { return ref }
+      return nil
+    }
+    #expect(refs.count == 3, "all repeated placements must survive reading")
+    #expect(refs.allSatisfy { $0.cellName == "UNIT" })
+    #expect(refs.map(\.origin.x).sorted() == [50, 150, 250])
+    #expect(refs.allSatisfy { $0.origin.y == 7 })
+  }
+
   // MARK: - Bug 3: Array placement field order
 
   @Test func testArrayPlacementFieldOrder() throws {

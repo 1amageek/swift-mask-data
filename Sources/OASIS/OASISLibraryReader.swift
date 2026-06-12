@@ -176,12 +176,12 @@ public enum OASISLibraryReader {
                 )
             case .placement:
                 _ = try reader.readByte()
-                let element = try readPlacement(&reader, modal: &modal, withTransform: false, cellNames: cellNames)
-                try appendElements([element], reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
+                let placed = try readPlacement(&reader, modal: &modal, withTransform: false, cellNames: cellNames)
+                try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
             case .placementT:
                 _ = try reader.readByte()
-                let element = try readPlacement(&reader, modal: &modal, withTransform: true, cellNames: cellNames)
-                try appendElements([element], reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
+                let placed = try readPlacement(&reader, modal: &modal, withTransform: true, cellNames: cellNames)
+                try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
             case .trapezoid:
                 _ = try reader.readByte()
                 try appendElements(
@@ -561,7 +561,7 @@ public enum OASISLibraryReader {
         modal: inout OASISModalState,
         withTransform: Bool,
         cellNames: [String]
-    ) throws -> IRElement {
+    ) throws -> [IRElement] {
         let infoByte = try reader.readByte()
 
         var cellName = modal.cellName ?? ""
@@ -599,7 +599,10 @@ public enum OASISLibraryReader {
             if infoByte & 0x10 != 0 { modal.y = try reader.readSignedInteger() }
         }
 
-        // Repetition
+        // Repetition: a grid keeps its compact form as one array
+        // reference; every other repetition kind expands into individual
+        // placements — each repeated occurrence is real geometry, so
+        // dropping the repetition would silently lose placements.
         let repBit: UInt8 = withTransform ? 0x08 : 0x08
         if infoByte & repBit != 0 {
             let rep = try readRepetitionWithReuse(&reader, modal: &modal)
@@ -630,26 +633,37 @@ public enum OASISLibraryReader {
                         context: "placement row reference"
                     ),
                 ]
-                return .arrayRef(IRArrayRef(
+                return [.arrayRef(IRArrayRef(
                     cellName: cellName,
                     transform: transform,
                     columns: try checkedInt16(cols, context: "placement columns"),
                     rows: try checkedInt16(rows, context: "placement rows"),
                     referencePoints: refPoints,
                     properties: []
-                ))
+                ))]
             }
+            let x = try checkedInt32(modal.x ?? 0, context: "placement x")
+            let y = try checkedInt32(modal.y ?? 0, context: "placement y")
+            return try expand(
+                .cellRef(IRCellRef(
+                    cellName: cellName,
+                    origin: IRPoint(x: x, y: y),
+                    transform: transform,
+                    properties: []
+                )),
+                repetition: rep
+            )
         }
 
         let x = try checkedInt32(modal.x ?? 0, context: "placement x")
         let y = try checkedInt32(modal.y ?? 0, context: "placement y")
 
-        return .cellRef(IRCellRef(
+        return [.cellRef(IRCellRef(
             cellName: cellName,
             origin: IRPoint(x: x, y: y),
             transform: transform,
             properties: []
-        ))
+        ))]
     }
 
     // MARK: - TRAPEZOID
