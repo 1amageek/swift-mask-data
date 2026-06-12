@@ -48,6 +48,46 @@ struct RegionSelfSpacingTests {
         #expect(r.selfSpaceViolations(minSpace: 20).isEmpty)
     }
 
+    @Test func stackedBandsOfOneMergedFeatureDoNotFlag() {
+        // A route polyline over a bar: the merged feature decomposes into
+        // stacked bands with differing x extents, and skip-a-row band
+        // pairs show positive gaps that intermediate bands completely
+        // fill. None of these interior gaps is a spacing violation.
+        let r = Region(layer: 1, polygons: [
+            makeBox(x1: 1080, y1: 0, x2: 1420, y2: 2000),       // bar
+            makeBox(x1: 1305, y1: 1885, x2: 24765, y2: 2115),   // leg 1
+            makeBox(x1: 24535, y1: 1885, x2: 24765, y2: 2465),  // leg 2
+            makeBox(x1: 24535, y1: 2235, x2: 25655, y2: 2465),  // leg 3
+        ])
+        #expect(r.selfSpaceViolations(minSpace: 230).isEmpty)
+    }
+
+    @Test func stackedFeatureStillFlagsAgainstSeparateMetal() {
+        // The interior-gap waiver must not silence a REAL gap between the
+        // stacked feature and disconnected metal 115 < 230 away.
+        let r = Region(layer: 1, polygons: [
+            makeBox(x1: 1080, y1: 0, x2: 1420, y2: 2000),
+            makeBox(x1: 1305, y1: 1885, x2: 3000, y2: 2115),
+            makeBox(x1: 3115, y1: 1885, x2: 4000, y2: 2115),    // 115 gap
+        ])
+        let violations = r.selfSpaceViolations(minSpace: 230)
+        #expect(!violations.isEmpty)
+        let xs = Set(violations.flatMap { [$0.edge1.p1.x, $0.edge2.p1.x] })
+        #expect(xs.contains(3000) && xs.contains(3115))
+    }
+
+    @Test func diagonalCornerGapFilledByMetalDoesNotFlag() {
+        // Two boxes diagonally adjacent, with the diagonal box between
+        // their corners completely covered by a third shape: connected
+        // metal, not a corner gap.
+        let r = Region(layer: 1, polygons: [
+            makeBox(x1: 0, y1: 0, x2: 100, y2: 100),
+            makeBox(x1: 110, y1: 110, x2: 210, y2: 210),
+            makeBox(x1: 80, y1: 80, x2: 130, y2: 130),          // bridges the corner
+        ])
+        #expect(r.selfSpaceViolations(minSpace: 30).isEmpty)
+    }
+
     @Test func notchInsideSingleComponentFlagsAsSpacing() {
         // U-shape: two 100-wide arms separated by a 100-wide notch.
         let u = IRBoundary(layer: 1, datatype: 0, points: [

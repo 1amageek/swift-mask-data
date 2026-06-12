@@ -129,16 +129,63 @@ enum DRCCheck {
         let bandsA = RegionBoolean.decompose(a)
         let bandsB = RegionBoolean.decompose(b)
 
-        var violations = verticalSpaceViolations(bandsA, bandsB, minSpace: minSpace)
+        // A merged feature is stored as stacked bands with differing x
+        // extents, so band pairs of ONE feature can show a positive gap
+        // that other bands of the same metal completely fill. Such a gap
+        // is interior — only gaps with actual empty space are spacing.
+        let union = RegionBoolean.perform(.or, a, b)
+        let coverage = GapCoverage(
+            bands: RegionBoolean.decompose(union),
+            margin: minSpace
+        )
+        let coverageTransposed = GapCoverage(
+            bands: RegionBoolean.decompose(transpose(union)),
+            margin: minSpace
+        )
+
+        var violations = verticalSpaceViolations(bandsA, bandsB, minSpace: minSpace, coverage: coverage)
         let transposedViolations = verticalSpaceViolations(
             RegionBoolean.decompose(transpose(a)),
             RegionBoolean.decompose(transpose(b)),
-            minSpace: minSpace
+            minSpace: minSpace,
+            coverage: coverageTransposed
         ).map(untranspose)
         violations.append(contentsOf: transposedViolations)
-        violations.append(contentsOf: cornerSpaceViolations(bandsA, bandsB, minSpace: minSpace))
+        violations.append(contentsOf: cornerSpaceViolations(bandsA, bandsB, minSpace: minSpace, coverage: coverage))
 
         return uniqueEdgePairs(violations.map(canonicalized))
+    }
+
+    /// Disjoint metal bands of one layer, queryable for whether an
+    /// axis-aligned gap box is completely covered — i.e. the "gap" is
+    /// interior to a merged feature, not empty space.
+    private struct GapCoverage {
+        private let bands: [RegionBoolean.Band]
+        private let grid: BandGrid
+
+        init(bands: [RegionBoolean.Band], margin: Int32) {
+            self.bands = bands
+            self.grid = BandGrid(bands: bands, margin: margin)
+        }
+
+        /// Bands are disjoint (scanline decomposition), so full coverage
+        /// is exactly "clipped areas sum to the box area".
+        func isFilled(xMin: Int32, xMax: Int32, yMin: Int32, yMax: Int32) -> Bool {
+            guard xMin < xMax, yMin < yMax else { return true }
+            let box = RegionBoolean.Band(xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax)
+            let area = Int64(xMax - xMin) * Int64(yMax - yMin)
+            var covered: Int64 = 0
+            for index in grid.candidateIndices(near: box, margin: 0) {
+                let band = bands[index]
+                let width = min(Int64(band.xMax), Int64(xMax)) - max(Int64(band.xMin), Int64(xMin))
+                guard width > 0 else { continue }
+                let height = min(Int64(band.yMax), Int64(yMax)) - max(Int64(band.yMin), Int64(yMin))
+                guard height > 0 else { continue }
+                covered += width * height
+                if covered >= area { return true }
+            }
+            return covered >= area
+        }
     }
 
     /// Euclidean corner-to-corner spacing between diagonally adjacent bands.
@@ -147,7 +194,8 @@ enum DRCCheck {
     private static func cornerSpaceViolations(
         _ a: [RegionBoolean.Band],
         _ b: [RegionBoolean.Band],
-        minSpace: Int32
+        minSpace: Int32,
+        coverage: GapCoverage
     ) -> [IREdgePair] {
         var violations: [IREdgePair] = []
         let minSpaceSquared = Int64(minSpace) * Int64(minSpace)
@@ -169,6 +217,14 @@ enum DRCCheck {
                     x: Int64(bandB.xMin) - Int64(bandA.xMax) > 0 ? bandB.xMin : bandB.xMax,
                     y: Int64(bandB.yMin) - Int64(bandA.yMax) > 0 ? bandB.yMin : bandB.yMax
                 )
+                // Metal completely filling the diagonal box connects the
+                // two corners into one feature; that gap is interior.
+                if coverage.isFilled(
+                    xMin: Int32(min(cornerA.x, cornerB.x)),
+                    xMax: Int32(max(cornerA.x, cornerB.x)),
+                    yMin: Int32(min(cornerA.y, cornerB.y)),
+                    yMax: Int32(max(cornerA.y, cornerB.y))
+                ) { continue }
                 violations.append(IREdgePair(
                     edge1: IREdge(p1: cornerA, p2: cornerA),
                     edge2: IREdge(p1: cornerB, p2: cornerB)
@@ -287,7 +343,8 @@ enum DRCCheck {
     private static func verticalSpaceViolations(
         _ a: [RegionBoolean.Band],
         _ b: [RegionBoolean.Band],
-        minSpace: Int32
+        minSpace: Int32,
+        coverage: GapCoverage
     ) -> [IREdgePair] {
         var violations: [IREdgePair] = []
         let grid = BandGrid(bands: b, margin: minSpace)
@@ -301,7 +358,11 @@ enum DRCCheck {
 
                 if bandA.xMax <= bandB.xMin {
                     let gap = bandB.xMin - bandA.xMax
-                    if gap > 0 && gap < minSpace {
+                    if gap > 0 && gap < minSpace
+                        && !coverage.isFilled(
+                            xMin: bandA.xMax, xMax: bandB.xMin,
+                            yMin: overlapMinY, yMax: overlapMaxY
+                        ) {
                         let e1 = verticalEdge(x: bandA.xMax, yMin: overlapMinY, yMax: overlapMaxY)
                         let e2 = verticalEdge(x: bandB.xMin, yMin: overlapMinY, yMax: overlapMaxY)
                         violations.append(IREdgePair(edge1: e1, edge2: e2))
@@ -309,7 +370,11 @@ enum DRCCheck {
                 }
                 if bandB.xMax <= bandA.xMin {
                     let gap = bandA.xMin - bandB.xMax
-                    if gap > 0 && gap < minSpace {
+                    if gap > 0 && gap < minSpace
+                        && !coverage.isFilled(
+                            xMin: bandB.xMax, xMax: bandA.xMin,
+                            yMin: overlapMinY, yMax: overlapMaxY
+                        ) {
                         let e1 = verticalEdge(x: bandA.xMin, yMin: overlapMinY, yMax: overlapMaxY)
                         let e2 = verticalEdge(x: bandB.xMax, yMin: overlapMinY, yMax: overlapMaxY)
                         violations.append(IREdgePair(edge1: e1, edge2: e2))
