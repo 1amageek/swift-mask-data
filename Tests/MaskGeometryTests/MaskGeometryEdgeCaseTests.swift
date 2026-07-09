@@ -35,6 +35,28 @@ private func boxWithCollinearVertex(layer: Int16 = 1) -> IRBoundary {
     ], properties: [])
 }
 
+@Suite("Scanline Sweep Invariants")
+struct ScanlineSweepInvariantTests {
+    @Test func invalidBandThrowsInsteadOfBeingDropped() {
+        let invalidBands = [
+            RegionBoolean.Band(xMin: 10, xMax: 10, yMin: 0, yMax: 20),
+        ]
+
+        #expect(throws: ScanlineSweep.SweepError.invalidBand(
+            input: "a",
+            index: 0,
+            xMin: 10,
+            xMax: 10,
+            yMin: 0,
+            yMax: 20
+        )) {
+            try ScanlineSweep.checkedSweepRows(invalidBands, []) { _, _, _, _ in
+                Issue.record("Invalid bands must be rejected before sweeping")
+            }
+        }
+    }
+}
+
 // MARK: - Region Edge Cases
 
 @Suite("Region Edge Cases")

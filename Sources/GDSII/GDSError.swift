@@ -8,4 +8,6 @@ public enum GDSError: Error, Sendable {
     case unsupportedRecord(recordType: GDSRecordType, context: String, offset: Int)
     case invalidString(offset: Int)
     case invalidStringValue(recordType: GDSRecordType, value: String)
+    case recordPayloadTooLarge(recordType: GDSRecordType, payloadLength: Int)
+    case invalidPayloadLength(offset: Int, dataType: GDSDataType, length: Int, alignment: Int)
 }

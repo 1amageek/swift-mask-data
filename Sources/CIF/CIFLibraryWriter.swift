@@ -109,10 +109,12 @@ public enum CIFLibraryWriter {
         guard pts.count == 4 else { return nil }
         let xs = pts.map(\.x)
         let ys = pts.map(\.y)
-        let minX = xs.min()!
-        let maxX = xs.max()!
-        let minY = ys.min()!
-        let maxY = ys.max()!
+        guard let minX = xs.min(),
+              let maxX = xs.max(),
+              let minY = ys.min(),
+              let maxY = ys.max() else {
+            return nil
+        }
 
         // Check it's actually axis-aligned
         for p in pts {

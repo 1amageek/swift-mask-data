@@ -38,13 +38,13 @@ struct DEFKLayoutCompatTests {
         #expect(result.dieArea!.points.count == 6)
     }
 
-    @Test func polygonDieAreaToIR() {
+    @Test func polygonDieAreaToIR() throws {
         let area = DEFDieArea(points: [
             IRPoint(x: 0, y: 0), IRPoint(x: 1000, y: 0),
             IRPoint(x: 1000, y: 500), IRPoint(x: 0, y: 500),
         ])
         let doc = DEFDocument(designName: "test", dieArea: area)
-        let lib = DEFIRConverter.toIRLibrary(doc)
+        let lib = try DEFIRConverter.toIRLibrary(doc)
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 5) // Closed polygon
         } else {

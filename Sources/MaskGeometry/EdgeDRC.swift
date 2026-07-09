@@ -72,10 +72,11 @@ enum EdgeDRC {
 
             for outerPoly in outer.polygons {
                 let outerEdges = PolygonGeometry.edges(of: outerPoly.points)
+                guard let firstOuterEdge = outerEdges.first else { continue }
 
                 for ie in innerEdges {
                     var minDist = Double.infinity
-                    var closestEdge = outerEdges.first!
+                    var closestEdge = firstOuterEdge
 
                     for oe in outerEdges {
                         let dist = edgeDistance(ie, oe, metric: metric)

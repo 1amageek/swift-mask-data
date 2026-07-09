@@ -1,5 +1,6 @@
 import Testing
 import Foundation
+@testable import LayoutIR
 @testable import GDSII
 
 @Suite("GDSII Error Paths")
@@ -54,6 +55,63 @@ struct GDSErrorPathTests {
         }
     }
 
+    @Test func int16PayloadWithOddByteCountThrows() {
+        var reader = GDSRecordReader(data: Data([0x00, 0x05, 0x00, 0x02, 0x00]))
+        do {
+            _ = try reader.readRecord()
+            Issue.record("Expected invalidPayloadLength")
+        } catch let error as GDSError {
+            guard case .invalidPayloadLength(let offset, let dataType, let length, let alignment) = error else {
+                Issue.record("Expected invalidPayloadLength, got \(error)")
+                return
+            }
+            #expect(offset == 0)
+            #expect(dataType == .int16)
+            #expect(length == 1)
+            #expect(alignment == 2)
+        } catch {
+            Issue.record("Expected GDSError.invalidPayloadLength, got \(error)")
+        }
+    }
+
+    @Test func real8PayloadWithNonReal8ByteCountThrows() {
+        var reader = GDSRecordReader(data: Data([0x00, 0x0B, 0x03, 0x05, 0, 0, 0, 0, 0, 0, 0]))
+        do {
+            _ = try reader.readRecord()
+            Issue.record("Expected invalidPayloadLength")
+        } catch let error as GDSError {
+            guard case .invalidPayloadLength(let offset, let dataType, let length, let alignment) = error else {
+                Issue.record("Expected invalidPayloadLength, got \(error)")
+                return
+            }
+            #expect(offset == 0)
+            #expect(dataType == .real8)
+            #expect(length == 7)
+            #expect(alignment == 8)
+        } catch {
+            Issue.record("Expected GDSError.invalidPayloadLength, got \(error)")
+        }
+    }
+
+    @Test func noDataRecordWithPayloadThrows() {
+        var reader = GDSRecordReader(data: Data([0x00, 0x06, 0x04, 0x00, 0x00, 0x00]))
+        do {
+            _ = try reader.readRecord()
+            Issue.record("Expected invalidPayloadLength")
+        } catch let error as GDSError {
+            guard case .invalidPayloadLength(let offset, let dataType, let length, let alignment) = error else {
+                Issue.record("Expected invalidPayloadLength, got \(error)")
+                return
+            }
+            #expect(offset == 0)
+            #expect(dataType == .noData)
+            #expect(length == 2)
+            #expect(alignment == 0)
+        } catch {
+            Issue.record("Expected GDSError.invalidPayloadLength, got \(error)")
+        }
+    }
+
     @Test func peekOnEmptyThrows() {
         let reader = GDSRecordReader(data: Data())
         #expect(throws: GDSError.self) {
@@ -103,12 +161,12 @@ struct GDSErrorPathTests {
 
     @Test func illegalTopLevelRecordThrows() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [6])
-        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeInt16(.header, values: [6])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
         try writer.writeString(.libname, value: "BADLIB")
-        writer.writeReal8(.units, values: [0.001, 1e-9])
-        writer.writeInt16(.layer, values: [1])
-        writer.writeNoData(.endlib)
+        try writer.writeReal8(.units, values: [0.001, 1e-9])
+        try writer.writeInt16(.layer, values: [1])
+        try writer.writeNoData(.endlib)
 
         #expect(throws: GDSError.self) {
             _ = try GDSLibraryReader.read(writer.data)
@@ -117,15 +175,15 @@ struct GDSErrorPathTests {
 
     @Test func illegalCellRecordThrows() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [6])
-        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeInt16(.header, values: [6])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
         try writer.writeString(.libname, value: "BADLIB")
-        writer.writeReal8(.units, values: [0.001, 1e-9])
-        writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
+        try writer.writeReal8(.units, values: [0.001, 1e-9])
+        try writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
         try writer.writeString(.strname, value: "TOP")
-        writer.writeInt16(.layer, values: [1])
-        writer.writeNoData(.endstr)
-        writer.writeNoData(.endlib)
+        try writer.writeInt16(.layer, values: [1])
+        try writer.writeNoData(.endstr)
+        try writer.writeNoData(.endlib)
 
         #expect(throws: GDSError.self) {
             _ = try GDSLibraryReader.read(writer.data)
@@ -134,10 +192,10 @@ struct GDSErrorPathTests {
 
     @Test func missingEndlibThrows() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [6])
-        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeInt16(.header, values: [6])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
         try writer.writeString(.libname, value: "BADLIB")
-        writer.writeReal8(.units, values: [0.001, 1e-9])
+        try writer.writeReal8(.units, values: [0.001, 1e-9])
 
         #expect(throws: GDSError.self) {
             _ = try GDSLibraryReader.read(writer.data)
@@ -146,16 +204,87 @@ struct GDSErrorPathTests {
 
     @Test func missingEndstrThrows() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [6])
-        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeInt16(.header, values: [6])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
         try writer.writeString(.libname, value: "BADLIB")
-        writer.writeReal8(.units, values: [0.001, 1e-9])
-        writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
+        try writer.writeReal8(.units, values: [0.001, 1e-9])
+        try writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
         try writer.writeString(.strname, value: "TOP")
-        writer.writeNoData(.endlib)
+        try writer.writeNoData(.endlib)
 
         #expect(throws: GDSError.self) {
             _ = try GDSLibraryReader.read(writer.data)
+        }
+    }
+
+    @Test func boundaryMissingLayerThrows() throws {
+        var writer = try makeLibraryPrefix()
+        try writer.writeNoData(.boundary)
+        try writer.writeInt16(.datatype, values: [0])
+        try writer.writeXY([
+            IRPoint(x: 0, y: 0),
+            IRPoint(x: 10, y: 0),
+            IRPoint(x: 10, y: 10),
+            IRPoint(x: 0, y: 0),
+        ])
+        try writer.writeNoData(.endel)
+        try writer.writeNoData(.endstr)
+        try writer.writeNoData(.endlib)
+
+        do {
+            _ = try GDSLibraryReader.read(writer.data)
+            Issue.record("Expected missingRequiredRecord")
+        } catch let error as GDSError {
+            guard case .missingRequiredRecord(let recordType, let context) = error else {
+                Issue.record("Expected missingRequiredRecord, got \(error)")
+                return
+            }
+            #expect(recordType == .layer)
+            #expect(context == "boundary")
+        }
+    }
+
+    @Test func srefMissingSnameThrows() throws {
+        var writer = try makeLibraryPrefix()
+        try writer.writeNoData(.sref)
+        try writer.writeXY([IRPoint(x: 0, y: 0)])
+        try writer.writeNoData(.endel)
+        try writer.writeNoData(.endstr)
+        try writer.writeNoData(.endlib)
+
+        do {
+            _ = try GDSLibraryReader.read(writer.data)
+            Issue.record("Expected missingRequiredRecord")
+        } catch let error as GDSError {
+            guard case .missingRequiredRecord(let recordType, let context) = error else {
+                Issue.record("Expected missingRequiredRecord, got \(error)")
+                return
+            }
+            #expect(recordType == .sname)
+            #expect(context == "sref")
+        }
+    }
+
+    @Test func xyWithUnpairedCoordinateThrows() throws {
+        var writer = try makeLibraryPrefix()
+        try writer.writeNoData(.path)
+        try writer.writeInt16(.layer, values: [1])
+        try writer.writeInt16(.datatype, values: [0])
+        try writer.writeInt32(.xy, values: [0, 0, 10])
+        try writer.writeNoData(.endel)
+        try writer.writeNoData(.endstr)
+        try writer.writeNoData(.endlib)
+
+        do {
+            _ = try GDSLibraryReader.read(writer.data)
+            Issue.record("Expected missingRequiredRecord")
+        } catch let error as GDSError {
+            guard case .missingRequiredRecord(let recordType, let context) = error else {
+                Issue.record("Expected missingRequiredRecord, got \(error)")
+                return
+            }
+            #expect(recordType == .xy)
+            #expect(context == "path has an unpaired coordinate")
         }
     }
 
@@ -213,4 +342,15 @@ struct GDSErrorPathTests {
         #expect(result > 0)
         #expect(result.isFinite)
     }
+}
+
+private func makeLibraryPrefix() throws -> GDSRecordWriter {
+    var writer = GDSRecordWriter()
+    try writer.writeInt16(.header, values: [6])
+    try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+    try writer.writeString(.libname, value: "BADLIB")
+    try writer.writeReal8(.units, values: [0.001, 1e-9])
+    try writer.writeInt16(.bgnstr, values: Array(repeating: 0, count: 12))
+    try writer.writeString(.strname, value: "TOP")
+    return writer
 }

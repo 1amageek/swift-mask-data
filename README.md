@@ -42,6 +42,7 @@ Then add the modules you need:
 | **LEF** | Library Exchange Format reader/writer |
 | **DEF** | Design Exchange Format reader/writer |
 | **DXF** | AutoCAD Drawing Exchange Format reader/writer |
+| **TechIR** | Codable technology IR for layer, via, enclosure, extension, antenna, and minimum-cut rules |
 | **FormatDetector** | Automatic layout format detection |
 | **MaskGeometry** | Boolean operations, sizing, and DRC on polygon regions |
 
@@ -265,6 +266,7 @@ Design Exchange Format including:
 - Pins with layer geometry and placement
 - Nets with routing (ROUTED, NEW continuation segments, via references)
 - Special nets with wide-wire routing and extension values
+- IR conversion for component placement, pin/net provenance, regular routed wires, and special-net routed segments
 - Blockages (routing and placement)
 - Tracks, GCell grids, regions, fills, groups
 - Polygon die area

@@ -99,6 +99,111 @@ struct OASISRoundTripBugTests {
         }
     }
 
+    @Test func testOddPathWidthIsRejectedInsteadOfRounded() throws {
+        let path = IRPath(
+            layer: 2,
+            datatype: 0,
+            pathType: .halfWidthExtend,
+            width: 101,
+            points: [
+                IRPoint(x: 0, y: 0),
+                IRPoint(x: 1000, y: 0),
+            ],
+            properties: []
+        )
+        let lib = IRLibrary(
+            name: "ODD_PATH_WIDTH",
+            units: .default,
+            cells: [IRCell(name: "W", elements: [.path(path)])]
+        )
+
+        do {
+            _ = try OASISLibraryWriter.write(lib)
+            Issue.record("Expected odd path width to fail instead of rounding.")
+        } catch OASISError.unsupportedGeometry(let context, let reason) {
+            #expect(context == "path")
+            #expect(reason.contains("odd database-unit width 101"))
+        }
+    }
+
+    @Test func testRoundPathEndCapIsRejectedInsteadOfApproximated() throws {
+        let path = IRPath(
+            layer: 2,
+            datatype: 0,
+            pathType: .round,
+            width: 100,
+            points: [
+                IRPoint(x: 0, y: 0),
+                IRPoint(x: 1000, y: 0),
+            ],
+            properties: []
+        )
+        let lib = IRLibrary(
+            name: "ROUND_PATH",
+            units: .default,
+            cells: [IRCell(name: "W", elements: [.path(path)])]
+        )
+
+        #expect(throws: OASISError.self) {
+            _ = try OASISLibraryWriter.write(lib)
+        }
+    }
+
+    @Test func testOpenBoundaryIsRejectedInsteadOfTrappingOrExporting() throws {
+        let boundary = IRBoundary(
+            layer: 1,
+            datatype: 0,
+            points: [
+                IRPoint(x: 0, y: 0),
+                IRPoint(x: 100, y: 0),
+                IRPoint(x: 100, y: 100),
+                IRPoint(x: 0, y: 100),
+            ]
+        )
+        let lib = IRLibrary(
+            name: "OPEN_BOUNDARY",
+            units: .default,
+            cells: [IRCell(name: "B", elements: [.boundary(boundary)])]
+        )
+
+        do {
+            _ = try OASISLibraryWriter.write(lib)
+            Issue.record("Expected open boundary to fail instead of exporting.")
+        } catch OASISError.unsupportedGeometry(let context, let reason) {
+            #expect(context == "boundary")
+            #expect(reason.contains("closed polygon"))
+        }
+    }
+
+    @Test func testNonIntegralArrayPitchIsRejectedInsteadOfTruncated() throws {
+        let array = IRArrayRef(
+            cellName: "UNIT",
+            columns: 2,
+            rows: 1,
+            referencePoints: [
+                IRPoint(x: 0, y: 0),
+                IRPoint(x: 101, y: 0),
+                IRPoint(x: 0, y: 0),
+            ]
+        )
+        let lib = IRLibrary(
+            name: "NON_INTEGRAL_ARRAY",
+            units: .default,
+            cells: [
+                IRCell(name: "UNIT"),
+                IRCell(name: "TOP", elements: [.arrayRef(array)]),
+            ]
+        )
+
+        do {
+            _ = try OASISLibraryWriter.write(lib)
+            Issue.record("Expected non-integral array pitch to fail instead of truncating.")
+        } catch OASISError.unsupportedGeometry(let context, let reason) {
+            #expect(context == "array placement repetition")
+            #expect(reason.contains("integral database-unit step"))
+        }
+    }
+
     // MARK: - Bug 5: RECTANGLE S-bit (square)
 
     @Test func testSquareRectangleSBit() throws {

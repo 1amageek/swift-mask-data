@@ -40,9 +40,7 @@ public enum DEFLibraryReader {
                 while i < tokens.count && tokens[i] != ";" {
                     if tokens[i].uppercased() == "MICRONS" {
                         i += 1
-                        if i < tokens.count, let val = Double(tokens[i]) {
-                            doc.dbuPerMicron = val
-                        }
+                        doc.dbuPerMicron = try parseDouble(tokens, at: i, context: "UNITS DISTANCE MICRONS")
                     }
                     i += 1
                 }
@@ -50,22 +48,22 @@ public enum DEFLibraryReader {
 
             case "DIEAREA":
                 i += 1
-                let (area, next) = parseDieArea(tokens, from: i)
+                let (area, next) = try parseDieArea(tokens, from: i)
                 doc.dieArea = area
                 i = next
 
             case "ROW":
-                let (row, next) = parseRow(tokens, from: i)
+                let (row, next) = try parseRow(tokens, from: i)
                 if let row = row { doc.rows.append(row) }
                 i = next
 
             case "TRACKS":
-                let (track, next) = parseTrackLine(tokens, from: i)
+                let (track, next) = try parseTrackLine(tokens, from: i)
                 if let track = track { doc.tracks.append(track) }
                 i = next
 
             case "GCELLGRID":
-                let (grid, next) = parseGCellGrid(tokens, from: i)
+                let (grid, next) = try parseGCellGrid(tokens, from: i)
                 if let grid = grid { doc.gcellGrids.append(grid) }
                 i = next
 
@@ -73,7 +71,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (comps, next) = parseComponents(tokens, from: i)
+                let (comps, next) = try parseComponents(tokens, from: i)
                 doc.components = comps
                 i = next
 
@@ -81,7 +79,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (pins, next) = parsePins(tokens, from: i)
+                let (pins, next) = try parsePins(tokens, from: i)
                 doc.pins = pins
                 i = next
 
@@ -89,7 +87,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (nets, next) = parseNets(tokens, from: i)
+                let (nets, next) = try parseNets(tokens, from: i)
                 doc.nets = nets
                 i = next
 
@@ -97,7 +95,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (snets, next) = parseSpecialNets(tokens, from: i)
+                let (snets, next) = try parseSpecialNets(tokens, from: i)
                 doc.specialNets = snets
                 i = next
 
@@ -105,7 +103,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (vias, next) = parseVias(tokens, from: i)
+                let (vias, next) = try parseVias(tokens, from: i)
                 doc.viaDefs = vias
                 i = next
 
@@ -113,7 +111,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (blk, next) = parseBlockages(tokens, from: i)
+                let (blk, next) = try parseBlockages(tokens, from: i)
                 doc.blockages = blk
                 i = next
 
@@ -121,7 +119,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (reg, next) = parseRegions(tokens, from: i)
+                let (reg, next) = try parseRegions(tokens, from: i)
                 doc.regions = reg
                 i = next
 
@@ -129,7 +127,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (fills, next) = parseFills(tokens, from: i)
+                let (fills, next) = try parseFills(tokens, from: i)
                 doc.fills = fills
                 i = next
 
@@ -168,14 +166,15 @@ public enum DEFLibraryReader {
 
     // MARK: - DIEAREA
 
-    private static func parseDieArea(_ tokens: [String], from start: Int) -> (DEFDieArea?, Int) {
+    private static func parseDieArea(_ tokens: [String], from start: Int) throws -> (DEFDieArea?, Int) {
         var i = start
         var points: [IRPoint] = []
         while i < tokens.count && tokens[i] != ";" {
             if tokens[i] == "(" {
                 i += 1
-                if i + 1 < tokens.count, let x = Int32(tokens[i]) {
-                    let y = Int32(tokens[i + 1]) ?? 0
+                if i + 1 < tokens.count {
+                    let x = try parseInt32(tokens, at: i, context: "DIEAREA x")
+                    let y = try parseInt32(tokens, at: i + 1, context: "DIEAREA y")
                     points.append(IRPoint(x: x, y: y))
                     i += 2
                 }
@@ -193,15 +192,15 @@ public enum DEFLibraryReader {
 
     // MARK: - ROW
 
-    private static func parseRow(_ tokens: [String], from start: Int) -> (DEFRow?, Int) {
+    private static func parseRow(_ tokens: [String], from start: Int) throws -> (DEFRow?, Int) {
         var i = start
         guard tokens[i].uppercased() == "ROW" else { return (nil, i + 1) }
         i += 1
         guard i + 4 < tokens.count else { return (nil, skipToSemicolon(tokens, i)) }
         let rowName = tokens[i]; i += 1
         let siteName = tokens[i]; i += 1
-        let originX = Int32(tokens[i]) ?? 0; i += 1
-        let originY = Int32(tokens[i]) ?? 0; i += 1
+        let originX = try parseInt32(tokens, at: i, context: "ROW \(rowName) origin x"); i += 1
+        let originY = try parseInt32(tokens, at: i, context: "ROW \(rowName) origin y"); i += 1
         let orient = DEFOrientation(rawValue: tokens[i].uppercased()) ?? .n; i += 1
 
         var numX: Int32 = 1, numY: Int32 = 1, stepX: Int32 = 0, stepY: Int32 = 0
@@ -209,13 +208,13 @@ public enum DEFLibraryReader {
         while i < tokens.count && tokens[i] != ";" {
             if tokens[i].uppercased() == "DO" {
                 i += 1
-                if i < tokens.count, let nx = Int32(tokens[i]) { numX = nx; i += 1 }
+                if i < tokens.count { numX = try parseInt32(tokens, at: i, context: "ROW \(rowName) DO count x"); i += 1 }
                 if i < tokens.count && tokens[i].uppercased() == "BY" { i += 1 }
-                if i < tokens.count, let ny = Int32(tokens[i]) { numY = ny; i += 1 }
+                if i < tokens.count { numY = try parseInt32(tokens, at: i, context: "ROW \(rowName) DO count y"); i += 1 }
             } else if tokens[i].uppercased() == "STEP" {
                 i += 1
-                if i < tokens.count, let sx = Int32(tokens[i]) { stepX = sx; i += 1 }
-                if i < tokens.count, let sy = Int32(tokens[i]) { stepY = sy; i += 1 }
+                if i < tokens.count { stepX = try parseInt32(tokens, at: i, context: "ROW \(rowName) STEP x"); i += 1 }
+                if i < tokens.count { stepY = try parseInt32(tokens, at: i, context: "ROW \(rowName) STEP y"); i += 1 }
             } else {
                 i += 1
             }
@@ -229,7 +228,7 @@ public enum DEFLibraryReader {
 
     // MARK: - TRACKS
 
-    private static func parseTrackLine(_ tokens: [String], from start: Int) -> (DEFTrack?, Int) {
+    private static func parseTrackLine(_ tokens: [String], from start: Int) throws -> (DEFTrack?, Int) {
         var i = start
         guard tokens[i].uppercased() == "TRACKS" else { return (nil, i + 1) }
         i += 1
@@ -238,11 +237,11 @@ public enum DEFLibraryReader {
             return (nil, skipToSemicolon(tokens, i))
         }
         i += 1
-        let startVal = Int32(tokens[i]) ?? 0; i += 1
+        let startVal = try parseInt32(tokens, at: i, context: "TRACKS start"); i += 1
         if i < tokens.count && tokens[i].uppercased() == "DO" { i += 1 }
-        let numTracks = Int32(tokens[i]) ?? 0; i += 1
+        let numTracks = try parseInt32(tokens, at: i, context: "TRACKS DO count"); i += 1
         if i < tokens.count && tokens[i].uppercased() == "STEP" { i += 1 }
-        let step = Int32(tokens[i]) ?? 0; i += 1
+        let step = try parseInt32(tokens, at: i, context: "TRACKS STEP"); i += 1
 
         var layers: [String] = []
         while i < tokens.count && tokens[i] != ";" {
@@ -261,7 +260,7 @@ public enum DEFLibraryReader {
 
     // MARK: - GCELLGRID
 
-    private static func parseGCellGrid(_ tokens: [String], from start: Int) -> (DEFGCellGrid?, Int) {
+    private static func parseGCellGrid(_ tokens: [String], from start: Int) throws -> (DEFGCellGrid?, Int) {
         var i = start
         guard tokens[i].uppercased() == "GCELLGRID" else { return (nil, i + 1) }
         i += 1
@@ -270,11 +269,11 @@ public enum DEFLibraryReader {
             return (nil, skipToSemicolon(tokens, i))
         }
         i += 1
-        let startVal = Int32(tokens[i]) ?? 0; i += 1
+        let startVal = try parseInt32(tokens, at: i, context: "GCELLGRID start"); i += 1
         if i < tokens.count && tokens[i].uppercased() == "DO" { i += 1 }
-        let numCols = Int32(tokens[i]) ?? 0; i += 1
+        let numCols = try parseInt32(tokens, at: i, context: "GCELLGRID DO count"); i += 1
         if i < tokens.count && tokens[i].uppercased() == "STEP" { i += 1 }
-        let step = Int32(tokens[i]) ?? 0; i += 1
+        let step = try parseInt32(tokens, at: i, context: "GCELLGRID STEP"); i += 1
         i = skip(";", tokens, i)
 
         return (DEFGCellGrid(direction: dir, start: startVal, numColumns: numCols, step: step), i)
@@ -282,7 +281,7 @@ public enum DEFLibraryReader {
 
     // MARK: - COMPONENTS
 
-    private static func parseComponents(_ tokens: [String], from start: Int) -> ([DEFComponent], Int) {
+    private static func parseComponents(_ tokens: [String], from start: Int) throws -> ([DEFComponent], Int) {
         var i = start
         var comps: [DEFComponent] = []
 
@@ -316,8 +315,8 @@ public enum DEFLibraryReader {
                             i += 1
                             if kw != "UNPLACED" {
                                 i = skip("(", tokens, i)
-                                if i < tokens.count, let v = Int32(tokens[i]) { x = v; i += 1 }
-                                if i < tokens.count, let v = Int32(tokens[i]) { y = v; i += 1 }
+                                if i < tokens.count { x = try parseInt32(tokens, at: i, context: "COMPONENT \(name) placement x"); i += 1 }
+                                if i < tokens.count { y = try parseInt32(tokens, at: i, context: "COMPONENT \(name) placement y"); i += 1 }
                                 i = skip(")", tokens, i)
                                 if i < tokens.count, let o = DEFOrientation(rawValue: tokens[i].uppercased()) {
                                     orient = o; i += 1
@@ -358,7 +357,7 @@ public enum DEFLibraryReader {
 
     // MARK: - PINS
 
-    private static func parsePins(_ tokens: [String], from start: Int) -> ([DEFPin], Int) {
+    private static func parsePins(_ tokens: [String], from start: Int) throws -> ([DEFPin], Int) {
         var i = start
         var pins: [DEFPin] = []
 
@@ -402,13 +401,15 @@ public enum DEFLibraryReader {
                                 var rects: [DEFRect] = []
                                 while i < tokens.count && tokens[i] == "(" {
                                     i += 1
-                                    if i + 3 < tokens.count,
-                                       let x1 = Int32(tokens[i]), let y1 = Int32(tokens[i+1]) {
+                                    if i + 3 < tokens.count {
+                                        let x1 = try parseInt32(tokens, at: i, context: "PIN \(name) layer rect x1")
+                                        let y1 = try parseInt32(tokens, at: i + 1, context: "PIN \(name) layer rect y1")
                                         i += 2
                                         i = skip(")", tokens, i)
                                         i = skip("(", tokens, i)
-                                        if i + 1 < tokens.count,
-                                           let x2 = Int32(tokens[i]), let y2 = Int32(tokens[i+1]) {
+                                        if i + 1 < tokens.count {
+                                            let x2 = try parseInt32(tokens, at: i, context: "PIN \(name) layer rect x2")
+                                            let y2 = try parseInt32(tokens, at: i + 1, context: "PIN \(name) layer rect y2")
                                             rects.append(DEFRect(x1: x1, y1: y1, x2: x2, y2: y2))
                                             i += 2
                                         }
@@ -417,8 +418,8 @@ public enum DEFLibraryReader {
                                         i = skip(")", tokens, i)
                                     }
                                 }
-                                if !rects.isEmpty {
-                                    pin.layerRects.append(DEFPinLayerRect(layerName: pin.layerName!, rects: rects))
+                                if !rects.isEmpty, let layerName = pin.layerName {
+                                    pin.layerRects.append(DEFPinLayerRect(layerName: layerName, rects: rects))
                                 }
                             }
                         } else if kw == "PLACED" || kw == "FIXED" || kw == "COVER" || kw == "UNPLACED" {
@@ -426,8 +427,8 @@ public enum DEFLibraryReader {
                             i += 1
                             if kw != "UNPLACED" {
                                 i = skip("(", tokens, i)
-                                if i < tokens.count, let v = Int32(tokens[i]) { pin.x = v; i += 1 }
-                                if i < tokens.count, let v = Int32(tokens[i]) { pin.y = v; i += 1 }
+                                if i < tokens.count { pin.x = try parseInt32(tokens, at: i, context: "PIN \(name) placement x"); i += 1 }
+                                if i < tokens.count { pin.y = try parseInt32(tokens, at: i, context: "PIN \(name) placement y"); i += 1 }
                                 i = skip(")", tokens, i)
                                 if i < tokens.count, let o = DEFOrientation(rawValue: tokens[i].uppercased()) {
                                     pin.orientation = o; i += 1
@@ -459,7 +460,7 @@ public enum DEFLibraryReader {
 
     // MARK: - NETS
 
-    private static func parseNets(_ tokens: [String], from start: Int) -> ([DEFNet], Int) {
+    private static func parseNets(_ tokens: [String], from start: Int) throws -> ([DEFNet], Int) {
         var i = start
         var nets: [DEFNet] = []
 
@@ -506,21 +507,22 @@ public enum DEFLibraryReader {
                                 var viaName: String?
                                 while i < tokens.count && tokens[i] == "(" {
                                     i += 1
-                                    if i + 1 < tokens.count,
-                                       let px = Int32(tokens[i]) {
+                                    if i + 1 < tokens.count, tokens[i] != "*" {
+                                        let px = try parseInt32(tokens, at: i, context: "NET \(name) route x")
                                         let py: Int32
                                         if tokens[i + 1] == "*" {
-                                            py = points.last?.y ?? 0
+                                            py = try previousRoutePoint(points, axis: "y", context: "NET \(name) route wildcard")
                                         } else {
-                                            py = Int32(tokens[i + 1]) ?? 0
+                                            py = try parseInt32(tokens, at: i + 1, context: "NET \(name) route y")
                                         }
                                         points.append(IRPoint(x: px, y: py))
                                         i += 2
                                     } else if i < tokens.count && tokens[i] == "*" {
                                         // wildcard
                                         i += 1
-                                        if i < tokens.count, let py = Int32(tokens[i]) {
-                                            let prevX = points.last?.x ?? 0
+                                        if i < tokens.count {
+                                            let py = try parseInt32(tokens, at: i, context: "NET \(name) route y")
+                                            let prevX = try previousRoutePoint(points, axis: "x", context: "NET \(name) route wildcard")
                                             points.append(IRPoint(x: prevX, y: py))
                                             i += 1
                                         }
@@ -560,7 +562,7 @@ public enum DEFLibraryReader {
 
     // MARK: - SPECIALNETS
 
-    private static func parseSpecialNets(_ tokens: [String], from start: Int) -> ([DEFSpecialNet], Int) {
+    private static func parseSpecialNets(_ tokens: [String], from start: Int) throws -> ([DEFSpecialNet], Int) {
         var i = start
         var snets: [DEFSpecialNet] = []
 
@@ -604,7 +606,10 @@ public enum DEFLibraryReader {
                             if i < tokens.count {
                                 let layerName = tokens[i]; i += 1
                                 var width: Int32 = 0
-                                if i < tokens.count, let w = Int32(tokens[i]) { width = w; i += 1 }
+                                if i < tokens.count {
+                                    width = try parseInt32(tokens, at: i, context: "SPECIALNET \(name) route width")
+                                    i += 1
+                                }
 
                                 var shape: DEFRouteSegment.RouteShape?
                                 // Parse optional + SHAPE before points
@@ -629,21 +634,23 @@ public enum DEFLibraryReader {
                                     if i < tokens.count {
                                         if tokens[i] == "*" {
                                             pt.x = nil; i += 1
-                                        } else if let v = Int32(tokens[i]) {
+                                        } else {
+                                            let v = try parseInt32(tokens, at: i, context: "SPECIALNET \(name) route x")
                                             pt.x = v; i += 1
                                         }
                                     }
                                     if i < tokens.count {
                                         if tokens[i] == "*" {
                                             pt.y = nil; i += 1
-                                        } else if let v = Int32(tokens[i]) {
+                                        } else {
+                                            let v = try parseInt32(tokens, at: i, context: "SPECIALNET \(name) route y")
                                             pt.y = v; i += 1
                                         }
                                     }
                                     // Optional extension
-                                    if i < tokens.count, let ext = Int32(tokens[i]),
-                                       tokens[i] != ")" {
-                                        pt.ext = ext; i += 1
+                                    if i < tokens.count && tokens[i] != ")" {
+                                        pt.ext = try parseInt32(tokens, at: i, context: "SPECIALNET \(name) route extension")
+                                        i += 1
                                     }
                                     i = skip(")", tokens, i)
                                     points.append(pt)
@@ -687,7 +694,7 @@ public enum DEFLibraryReader {
 
     // MARK: - VIAS
 
-    private static func parseVias(_ tokens: [String], from start: Int) -> ([DEFViaDef], Int) {
+    private static func parseVias(_ tokens: [String], from start: Int) throws -> ([DEFViaDef], Int) {
         var i = start
         var vias: [DEFViaDef] = []
 
@@ -713,29 +720,34 @@ public enum DEFLibraryReader {
                             if i < tokens.count { via.viaRule = tokens[i]; i += 1 }
                         } else if kw == "CUTSIZE" {
                             i += 1
-                            if i + 1 < tokens.count,
-                               let w = Int32(tokens[i]), let h = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let w = try parseInt32(tokens, at: i, context: "VIA \(name) CUTSIZE width")
+                                let h = try parseInt32(tokens, at: i + 1, context: "VIA \(name) CUTSIZE height")
                                 via.cutSize = (w, h); i += 2
                             }
                         } else if kw == "CUTSPACING" {
                             i += 1
-                            if i + 1 < tokens.count,
-                               let x = Int32(tokens[i]), let y = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x = try parseInt32(tokens, at: i, context: "VIA \(name) CUTSPACING x")
+                                let y = try parseInt32(tokens, at: i + 1, context: "VIA \(name) CUTSPACING y")
                                 via.cutSpacing = (x, y); i += 2
                             }
                         } else if kw == "ENCLOSURE" {
                             i += 1
-                            if i + 3 < tokens.count,
-                               let bx = Int32(tokens[i]), let by = Int32(tokens[i+1]),
-                               let tx = Int32(tokens[i+2]), let ty = Int32(tokens[i+3]) {
+                            if i + 3 < tokens.count {
+                                let bx = try parseInt32(tokens, at: i, context: "VIA \(name) ENCLOSURE bottom x")
+                                let by = try parseInt32(tokens, at: i + 1, context: "VIA \(name) ENCLOSURE bottom y")
+                                let tx = try parseInt32(tokens, at: i + 2, context: "VIA \(name) ENCLOSURE top x")
+                                let ty = try parseInt32(tokens, at: i + 3, context: "VIA \(name) ENCLOSURE top y")
                                 via.botEnclosure = (bx, by)
                                 via.topEnclosure = (tx, ty)
                                 i += 4
                             }
                         } else if kw == "ROWCOL" {
                             i += 1
-                            if i + 1 < tokens.count,
-                               let r = Int32(tokens[i]), let c = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let r = try parseInt32(tokens, at: i, context: "VIA \(name) ROWCOL rows")
+                                let c = try parseInt32(tokens, at: i + 1, context: "VIA \(name) ROWCOL columns")
                                 via.rowCol = (r, c); i += 2
                             }
                         } else if kw == "LAYERS" || kw == "RECT" {
@@ -755,12 +767,15 @@ public enum DEFLibraryReader {
                                 if i < tokens.count {
                                     let layerName = tokens[i]; i += 1
                                     i = skip("(", tokens, i)
-                                    if i + 3 < tokens.count,
-                                       let x1 = Int32(tokens[i]), let y1 = Int32(tokens[i+1]) {
+                                    if i + 3 < tokens.count {
+                                        let x1 = try parseInt32(tokens, at: i, context: "VIA \(name) RECT x1")
+                                        let y1 = try parseInt32(tokens, at: i + 1, context: "VIA \(name) RECT y1")
                                         i += 2
                                         i = skip(")", tokens, i)
                                         i = skip("(", tokens, i)
-                                        if let x2 = Int32(tokens[i]), let y2 = Int32(tokens[i+1]) {
+                                        if i + 1 < tokens.count {
+                                            let x2 = try parseInt32(tokens, at: i, context: "VIA \(name) RECT x2")
+                                            let y2 = try parseInt32(tokens, at: i + 1, context: "VIA \(name) RECT y2")
                                             let rect = DEFRect(x1: x1, y1: y1, x2: x2, y2: y2)
                                             if let idx = via.layers.firstIndex(where: { $0.layerName == layerName }) {
                                                 via.layers[idx].rects.append(rect)
@@ -792,7 +807,7 @@ public enum DEFLibraryReader {
 
     // MARK: - BLOCKAGES
 
-    private static func parseBlockages(_ tokens: [String], from start: Int) -> ([DEFBlockage], Int) {
+    private static func parseBlockages(_ tokens: [String], from start: Int) throws -> ([DEFBlockage], Int) {
         var i = start
         var blockages: [DEFBlockage] = []
 
@@ -839,12 +854,15 @@ public enum DEFLibraryReader {
                     } else if tokens[i].uppercased() == "RECT" {
                         i += 1
                         i = skip("(", tokens, i)
-                        if i + 3 < tokens.count,
-                           let x1 = Int32(tokens[i]), let y1 = Int32(tokens[i+1]) {
+                        if i + 3 < tokens.count {
+                            let x1 = try parseInt32(tokens, at: i, context: "BLOCKAGE RECT x1")
+                            let y1 = try parseInt32(tokens, at: i + 1, context: "BLOCKAGE RECT y1")
                             i += 2
                             i = skip(")", tokens, i)
                             i = skip("(", tokens, i)
-                            if let x2 = Int32(tokens[i]), let y2 = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x2 = try parseInt32(tokens, at: i, context: "BLOCKAGE RECT x2")
+                                let y2 = try parseInt32(tokens, at: i + 1, context: "BLOCKAGE RECT y2")
                                 rects.append(DEFRect(x1: x1, y1: y1, x2: x2, y2: y2))
                                 i += 2
                             }
@@ -855,8 +873,9 @@ public enum DEFLibraryReader {
                         var pts: [IRPoint] = []
                         while i < tokens.count && tokens[i] == "(" {
                             i += 1
-                            if i + 1 < tokens.count,
-                               let x = Int32(tokens[i]), let y = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x = try parseInt32(tokens, at: i, context: "BLOCKAGE POLYGON x")
+                                let y = try parseInt32(tokens, at: i + 1, context: "BLOCKAGE POLYGON y")
                                 pts.append(IRPoint(x: x, y: y))
                                 i += 2
                             }
@@ -881,7 +900,7 @@ public enum DEFLibraryReader {
 
     // MARK: - REGIONS
 
-    private static func parseRegions(_ tokens: [String], from start: Int) -> ([DEFRegion], Int) {
+    private static func parseRegions(_ tokens: [String], from start: Int) throws -> ([DEFRegion], Int) {
         var i = start
         var regions: [DEFRegion] = []
 
@@ -901,13 +920,15 @@ public enum DEFLibraryReader {
                 while i < tokens.count && tokens[i] != ";" {
                     if tokens[i] == "(" {
                         i += 1
-                        if i + 1 < tokens.count,
-                           let x1 = Int32(tokens[i]), let y1 = Int32(tokens[i+1]) {
+                        if i + 1 < tokens.count {
+                            let x1 = try parseInt32(tokens, at: i, context: "REGION \(name) RECT x1")
+                            let y1 = try parseInt32(tokens, at: i + 1, context: "REGION \(name) RECT y1")
                             i += 2
                             i = skip(")", tokens, i)
                             i = skip("(", tokens, i)
-                            if i + 1 < tokens.count,
-                               let x2 = Int32(tokens[i]), let y2 = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x2 = try parseInt32(tokens, at: i, context: "REGION \(name) RECT x2")
+                                let y2 = try parseInt32(tokens, at: i + 1, context: "REGION \(name) RECT y2")
                                 rects.append(DEFRect(x1: x1, y1: y1, x2: x2, y2: y2))
                                 i += 2
                             }
@@ -942,7 +963,7 @@ public enum DEFLibraryReader {
 
     // MARK: - FILLS
 
-    private static func parseFills(_ tokens: [String], from start: Int) -> ([DEFFill], Int) {
+    private static func parseFills(_ tokens: [String], from start: Int) throws -> ([DEFFill], Int) {
         var i = start
         var fills: [DEFFill] = []
 
@@ -977,12 +998,15 @@ public enum DEFLibraryReader {
                     } else if tokens[i].uppercased() == "RECT" {
                         i += 1
                         i = skip("(", tokens, i)
-                        if i + 3 < tokens.count,
-                           let x1 = Int32(tokens[i]), let y1 = Int32(tokens[i+1]) {
+                        if i + 3 < tokens.count {
+                            let x1 = try parseInt32(tokens, at: i, context: "FILL RECT x1")
+                            let y1 = try parseInt32(tokens, at: i + 1, context: "FILL RECT y1")
                             i += 2
                             i = skip(")", tokens, i)
                             i = skip("(", tokens, i)
-                            if let x2 = Int32(tokens[i]), let y2 = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x2 = try parseInt32(tokens, at: i, context: "FILL RECT x2")
+                                let y2 = try parseInt32(tokens, at: i + 1, context: "FILL RECT y2")
                                 rects.append(DEFRect(x1: x1, y1: y1, x2: x2, y2: y2))
                                 i += 2
                             }
@@ -993,8 +1017,9 @@ public enum DEFLibraryReader {
                         var pts: [IRPoint] = []
                         while i < tokens.count && tokens[i] == "(" {
                             i += 1
-                            if i + 1 < tokens.count,
-                               let x = Int32(tokens[i]), let y = Int32(tokens[i+1]) {
+                            if i + 1 < tokens.count {
+                                let x = try parseInt32(tokens, at: i, context: "FILL POLYGON x")
+                                let y = try parseInt32(tokens, at: i + 1, context: "FILL POLYGON y")
                                 pts.append(IRPoint(x: x, y: y))
                                 i += 2
                             }
@@ -1113,6 +1138,33 @@ public enum DEFLibraryReader {
     }
 
     // MARK: - Helpers
+
+    private static func parseInt32(_ tokens: [String], at index: Int, context: String) throws -> Int32 {
+        guard index < tokens.count else {
+            throw DEFError.missingNumber(context: context)
+        }
+        guard let value = Int32(tokens[index]) else {
+            throw DEFError.invalidNumber(context: context, token: tokens[index])
+        }
+        return value
+    }
+
+    private static func parseDouble(_ tokens: [String], at index: Int, context: String) throws -> Double {
+        guard index < tokens.count else {
+            throw DEFError.missingNumber(context: context)
+        }
+        guard let value = Double(tokens[index]), value.isFinite else {
+            throw DEFError.invalidNumber(context: context, token: tokens[index])
+        }
+        return value
+    }
+
+    private static func previousRoutePoint(_ points: [IRPoint], axis: String, context: String) throws -> Int32 {
+        guard let point = points.last else {
+            throw DEFError.missingNumber(context: context)
+        }
+        return axis == "x" ? point.x : point.y
+    }
 
     private static func skip(_ token: String, _ tokens: [String], _ i: Int) -> Int {
         if i < tokens.count && tokens[i] == token { return i + 1 }

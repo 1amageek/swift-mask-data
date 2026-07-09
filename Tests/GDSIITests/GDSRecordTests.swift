@@ -96,16 +96,16 @@ struct GDSRecordReaderTests {
 @Suite("GDSRecordWriter")
 struct GDSRecordWriterTests {
 
-    @Test func writeNoData() {
+    @Test func writeNoData() throws {
         var writer = GDSRecordWriter()
-        writer.writeNoData(.endlib)
+        try writer.writeNoData(.endlib)
         let bytes = Array(writer.data)
         #expect(bytes == [0x00, 0x04, 0x04, 0x00])
     }
 
-    @Test func writeInt16() {
+    @Test func writeInt16() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [600])
+        try writer.writeInt16(.header, values: [600])
         let bytes = Array(writer.data)
         #expect(bytes == [0x00, 0x06, 0x00, 0x02, 0x02, 0x58])
     }
@@ -141,9 +141,17 @@ struct GDSRecordWriterTests {
         }
     }
 
-    @Test func writeXY() {
+    @Test func checkedWriteInt32RejectsOversizedRecordPayload() {
         var writer = GDSRecordWriter()
-        writer.writeXY([IRPoint(x: 100, y: -200)])
+        #expect(throws: GDSError.self) {
+            try writer.checkedWriteInt32(.xy, values: Array(repeating: 0, count: 16_383))
+        }
+        #expect(writer.data.isEmpty)
+    }
+
+    @Test func writeXY() throws {
+        var writer = GDSRecordWriter()
+        try writer.writeXY([IRPoint(x: 100, y: -200)])
         let bytes = Array(writer.data)
         // XY: type=0x10, dataType=0x03, 2 int32s = 8 bytes payload, total=12
         #expect(bytes.count == 12)
@@ -153,9 +161,9 @@ struct GDSRecordWriterTests {
 
     @Test func writeReadRoundTrip() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [600])
+        try writer.writeInt16(.header, values: [600])
         try writer.writeString(.libname, value: "MYLIB")
-        writer.writeNoData(.endlib)
+        try writer.writeNoData(.endlib)
 
         var reader = GDSRecordReader(data: writer.data)
         let r1 = try reader.readRecord()

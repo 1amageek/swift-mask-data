@@ -206,6 +206,39 @@ struct OASISRealTests {
         #expect(abs(value - (-3.0 / 7.0)) < 1e-15)
     }
 
+    @Test func zeroReciprocalDenominatorThrowsTypedError() throws {
+        var writer = OASISWriter()
+        writer.writeUnsignedInteger(2)
+        writer.writeUnsignedInteger(0)
+        var reader = OASISReader(data: writer.data)
+
+        do {
+            _ = try reader.readReal()
+            Issue.record("Expected invalid real value")
+        } catch OASISError.invalidRealValue(let offset, let typeCode, let reason) {
+            #expect(offset == 0)
+            #expect(typeCode == 2)
+            #expect(reason == "zero denominator")
+        }
+    }
+
+    @Test func zeroRatioDenominatorThrowsTypedError() throws {
+        var writer = OASISWriter()
+        writer.writeUnsignedInteger(4)
+        writer.writeUnsignedInteger(3)
+        writer.writeUnsignedInteger(0)
+        var reader = OASISReader(data: writer.data)
+
+        do {
+            _ = try reader.readReal()
+            Issue.record("Expected invalid real value")
+        } catch OASISError.invalidRealValue(let offset, let typeCode, let reason) {
+            #expect(offset == 0)
+            #expect(typeCode == 4)
+            #expect(reason == "zero denominator")
+        }
+    }
+
     @Test func ieeeFloat64() throws {
         // Type 7: IEEE 754 double
         let original = 3.14159265358979
@@ -234,6 +267,35 @@ struct OASISRealTests {
                 let relError = abs(decoded - original) / abs(original)
                 #expect(relError < 1e-13, "Round-trip failed for \(original)")
             }
+        }
+    }
+}
+
+@Suite("OASIS CBLOCK")
+struct OASISCBlockTests {
+    @Test func cblockWithExactUncompressedSizeIsReadable() throws {
+        let payload = Data([0xAA, 0xBB, 0xCC])
+        var writer = OASISWriter()
+        writer.writeCBlock(payload)
+        var reader = OASISReader(data: writer.data)
+
+        #expect(try reader.readByte() == OASISRecordType.cblock.rawValue)
+        try reader.handleCBlock()
+        #expect(try reader.readBytes(payload.count) == payload)
+        #expect(!reader.hasMore)
+    }
+
+    @Test func cblockShortDecompressionThrowsTypedError() throws {
+        let payload = Data([0xAA, 0xBB])
+        var writer = OASISWriter()
+        writer.writeCBlock(payload)
+        var data = writer.data
+        data[2] = 0x03
+        var reader = OASISReader(data: data)
+
+        #expect(try reader.readByte() == OASISRecordType.cblock.rawValue)
+        #expect(throws: OASISError.self) {
+            try reader.handleCBlock()
         }
     }
 }

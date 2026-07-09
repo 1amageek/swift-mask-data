@@ -212,6 +212,40 @@ struct OASISBugFixTests {
     }
   }
 
+  @Test func testInitialRepetitionReuseWithoutPreviousRepetitionFails() throws {
+    var w = OASISWriter()
+    w.writeMagic()
+
+    w.writeByte(OASISRecordType.start.rawValue)
+    try w.writeAString("1.0")
+    w.writeReal(0.001)
+    w.writeUnsignedInteger(0)
+
+    w.writeByte(OASISRecordType.cellname.rawValue)
+    try w.writeAString("BADREP")
+    w.writeByte(OASISRecordType.cellRef.rawValue)
+    w.writeUnsignedInteger(0)
+
+    w.writeByte(OASISRecordType.rectangle.rawValue)
+    let infoByte: UInt8 = 0b0111_1111
+    w.writeByte(infoByte)
+    w.writeUnsignedInteger(1)
+    w.writeUnsignedInteger(0)
+    w.writeUnsignedInteger(50)
+    w.writeUnsignedInteger(30)
+    w.writeSignedInteger(0)
+    w.writeSignedInteger(0)
+    w.writeByte(0x00)
+
+    w.writeByte(OASISRecordType.end.rawValue)
+    try w.writeAString("")
+    w.writeUnsignedInteger(0)
+
+    #expect(throws: OASISError.self) {
+      _ = try OASISLibraryReader.read(w.data)
+    }
+  }
+
   @Test func testRepetitionOffsetOverflowThrowsTypedError() throws {
     let data = try makeOASISData(cellName: "REP_OVERFLOW") { w in
       w.writeByte(OASISRecordType.rectangle.rawValue)
@@ -426,6 +460,96 @@ struct OASISBugFixTests {
     }
   }
 
+  @Test func testOneColumnArrayPlacementDoesNotTrap() throws {
+    let child = IRCell(name: "UNIT", elements: [])
+    let arrayRef = IRArrayRef(
+      cellName: "UNIT",
+      transform: .identity,
+      columns: 1,
+      rows: 2,
+      referencePoints: [
+        IRPoint(x: 10, y: 20),
+        IRPoint(x: 10, y: 20),
+        IRPoint(x: 10, y: 120),
+      ],
+      properties: []
+    )
+    let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
+    let lib = IRLibrary(name: "ONECOL", units: .default, cells: [child, parent])
+
+    let data = try OASISLibraryWriter.write(lib)
+    let result = try OASISLibraryReader.read(data)
+    let top = try #require(result.cell(named: "ARRAY_TOP"))
+    let refs = top.elements.compactMap { element -> IRCellRef? in
+      if case .cellRef(let ref) = element { return ref }
+      return nil
+    }
+    #expect(refs.count == 2)
+    #expect(refs.map(\.origin.y).sorted() == [20, 70])
+    #expect(refs.allSatisfy { $0.origin.x == 10 })
+  }
+
+  @Test func testOneRowArrayPlacementDoesNotTrap() throws {
+    let child = IRCell(name: "UNIT", elements: [])
+    let arrayRef = IRArrayRef(
+      cellName: "UNIT",
+      transform: .identity,
+      columns: 2,
+      rows: 1,
+      referencePoints: [
+        IRPoint(x: 10, y: 20),
+        IRPoint(x: 110, y: 20),
+        IRPoint(x: 10, y: 20),
+      ],
+      properties: []
+    )
+    let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
+    let lib = IRLibrary(name: "ONEROW", units: .default, cells: [child, parent])
+
+    let data = try OASISLibraryWriter.write(lib)
+    let result = try OASISLibraryReader.read(data)
+    let top = try #require(result.cell(named: "ARRAY_TOP"))
+    let refs = top.elements.compactMap { element -> IRCellRef? in
+      if case .cellRef(let ref) = element { return ref }
+      return nil
+    }
+    #expect(refs.count == 2)
+    #expect(refs.map(\.origin.x).sorted() == [10, 60])
+    #expect(refs.allSatisfy { $0.origin.y == 20 })
+  }
+
+  @Test func testOneRowArrayPlacementPreservesTransform() throws {
+    let child = IRCell(name: "UNIT", elements: [])
+    let arrayRef = IRArrayRef(
+      cellName: "UNIT",
+      transform: IRTransform(mirrorX: false, magnification: 1.0, angle: 90.0),
+      columns: 2,
+      rows: 1,
+      referencePoints: [
+        IRPoint(x: 10, y: 20),
+        IRPoint(x: 110, y: 20),
+        IRPoint(x: 10, y: 20),
+      ],
+      properties: []
+    )
+    let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
+    let lib = IRLibrary(name: "ONEROW_TRANSFORM", units: .default, cells: [child, parent])
+
+    let data = try OASISLibraryWriter.write(lib)
+    let result = try OASISLibraryReader.read(data)
+    let top = try #require(result.cell(named: "ARRAY_TOP"))
+    let refs = top.elements.compactMap { element -> IRCellRef? in
+      if case .cellRef(let ref) = element { return ref }
+      return nil
+    }
+    #expect(refs.count == 2)
+    #expect(refs.map(\.origin.x).sorted() == [10, 60])
+    #expect(refs.allSatisfy { $0.origin.y == 20 })
+    #expect(refs.allSatisfy { $0.transform.angle == 90.0 })
+    #expect(refs.allSatisfy { $0.transform.magnification == 1.0 })
+    #expect(refs.allSatisfy { !$0.transform.mirrorX })
+  }
+
   // MARK: - Bug 4: Property value count
 
   @Test func testPropertyValueCount() throws {
@@ -493,6 +617,52 @@ struct OASISBugFixTests {
       #expect(prop.value.contains("gamma"))
     } else {
       Issue.record("Expected boundary element with property")
+    }
+  }
+
+  @Test func cellReferenceToMissingNameFailsClosed() throws {
+    var w = OASISWriter()
+    w.writeMagic()
+    w.writeByte(OASISRecordType.start.rawValue)
+    try w.writeAString("1.0")
+    w.writeReal(0.001)
+    w.writeUnsignedInteger(0)
+    w.writeByte(OASISRecordType.cellRef.rawValue)
+    w.writeUnsignedInteger(9)
+    w.writeByte(OASISRecordType.end.rawValue)
+    try w.writeAString("")
+    w.writeUnsignedInteger(0)
+
+    do {
+      _ = try OASISLibraryReader.read(w.data)
+      Issue.record("Expected unresolvedReference")
+    } catch OASISError.unresolvedReference(let context, let refNum) {
+      #expect(context == "cell reference")
+      #expect(refNum == 9)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
+    }
+  }
+
+  @Test func textStringReferenceToMissingNameFailsClosed() throws {
+    let data = try makeOASISData(cellName: "TOP") { w in
+      w.writeByte(OASISRecordType.text.rawValue)
+      w.writeByte(0b0111_1011)
+      w.writeUnsignedInteger(7)
+      w.writeUnsignedInteger(1)
+      w.writeUnsignedInteger(0)
+      w.writeSignedInteger(0)
+      w.writeSignedInteger(0)
+    }
+
+    do {
+      _ = try OASISLibraryReader.read(data)
+      Issue.record("Expected unresolvedReference")
+    } catch OASISError.unresolvedReference(let context, let refNum) {
+      #expect(context == "text-string reference")
+      #expect(refNum == 7)
+    } catch {
+      Issue.record("Unexpected error: \(error)")
     }
   }
 

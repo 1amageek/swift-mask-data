@@ -3,6 +3,7 @@ public enum OASISError: Error, Sendable {
     case unexpectedEndOfData(offset: Int)
     case unknownRecordType(offset: Int, rawValue: UInt8)
     case unknownRealType(offset: Int, typeCode: UInt64)
+    case invalidRealValue(offset: Int, typeCode: UInt64, reason: String)
     case invalidString(offset: Int)
     case unexpectedRecord(got: UInt8, expected: String, offset: Int)
     case invalidPointListType(offset: Int, typeCode: UInt64)
@@ -11,4 +12,6 @@ public enum OASISError: Error, Sendable {
     case invalidCTrapezoidType(offset: Int, typeCode: UInt64)
     case negativeLayerValue(field: String, value: Int16)
     case numericOverflow(context: String, value: String)
+    case unresolvedReference(context: String, refNum: UInt64)
+    case unsupportedGeometry(context: String, reason: String)
 }

@@ -354,11 +354,11 @@ struct GDSLibraryReaderTests {
 
     @Test func readUnitsUsesUserUnitsPerDBU() throws {
         var writer = GDSRecordWriter()
-        writer.writeInt16(.header, values: [600])
-        writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeInt16(.header, values: [600])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
         try writer.writeString(.libname, value: "UNITS")
-        writer.writeReal8(.units, values: [0.002, 1e-9])
-        writer.writeNoData(.endlib)
+        try writer.writeReal8(.units, values: [0.002, 1e-9])
+        try writer.writeNoData(.endlib)
 
         let result = try GDSLibraryReader.read(writer.data)
         #expect(abs(result.units.dbuPerMicron - 500.0) < 1e-6)

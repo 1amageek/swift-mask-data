@@ -118,6 +118,7 @@ public enum OASISLibraryWriter {
     }
 
     private static func writeBoundary(_ w: inout OASISWriter, _ b: IRBoundary) throws {
+        try validateBoundaryForLosslessOASISExport(b)
         // Check if axis-aligned rectangle → RECTANGLE record
         if let rect = isAxisAlignedRectangle(b.points) {
             // RECTANGLE (record type 20)
@@ -147,7 +148,7 @@ public enum OASISLibraryWriter {
         try writeUnsignedLayerValue(&w, field: "datatype", value: b.datatype)
 
         // Convert absolute points to delta-encoded point list (excluding close point)
-        let deltas = absoluteToDeltas(b.points)
+        let deltas = try absoluteToDeltas(b.points, context: "boundary")
         w.writePointList(deltas)
 
         // X, Y of first point
@@ -156,6 +157,7 @@ public enum OASISLibraryWriter {
     }
 
     private static func writePath(_ w: inout OASISWriter, _ p: IRPath) throws {
+        try validatePathForLosslessOASISExport(p)
         // PATH (record type 22)
         w.writeByte(OASISRecordType.path.rawValue)
         // info-byte: E X Y R D L W T
@@ -168,16 +170,59 @@ public enum OASISLibraryWriter {
         w.writeUnsignedInteger(UInt64(p.width / 2))  // half-width
 
         // Extension scheme: encode pathType
-        let extScheme = oasisExtensionScheme(p.pathType)
+        let extScheme = try oasisExtensionScheme(p.pathType)
         w.writeUnsignedInteger(extScheme)
 
         // Point list (deltas from first point)
-        let deltas = absoluteToDeltas(p.points)
+        let deltas = try absoluteToDeltas(p.points, context: "path")
         w.writePointList(deltas)
 
         // X, Y of first point
         w.writeSignedInteger(Int64(p.points[0].x))
         w.writeSignedInteger(Int64(p.points[0].y))
+    }
+
+    private static func validatePathForLosslessOASISExport(_ path: IRPath) throws {
+        guard path.points.count >= 2 else {
+            throw OASISError.unsupportedGeometry(
+                context: "path",
+                reason: "OASIS PATH export requires at least two points."
+            )
+        }
+        guard path.width > 0 else {
+            throw OASISError.unsupportedGeometry(
+                context: "path",
+                reason: "OASIS PATH export requires a positive width."
+            )
+        }
+        guard path.width % 2 == 0 else {
+            throw OASISError.unsupportedGeometry(
+                context: "path",
+                reason: "OASIS PATH stores half-width; odd database-unit width \(path.width) cannot be exported without rounding."
+            )
+        }
+    }
+
+    private static func validateBoundaryForLosslessOASISExport(_ boundary: IRBoundary) throws {
+        guard boundary.points.count >= 4 else {
+            throw OASISError.unsupportedGeometry(
+                context: "boundary",
+                reason: "OASIS boundary export requires at least three vertices plus a closing point."
+            )
+        }
+        guard boundary.points.first == boundary.points.last else {
+            throw OASISError.unsupportedGeometry(
+                context: "boundary",
+                reason: "OASIS boundary export requires a closed polygon."
+            )
+        }
+        let area2 = signedDoubleArea(boundary.points)
+        guard area2 != 0 else {
+            throw OASISError.unsupportedGeometry(
+                context: "boundary",
+                reason: "OASIS boundary export requires non-zero polygon area."
+            )
+        }
     }
 
     private static func writeText(_ w: inout OASISWriter, _ t: IRText) throws {
@@ -241,41 +286,132 @@ public enum OASISLibraryWriter {
     }
 
     private static func writeArrayPlacement(_ w: inout OASISWriter, _ a: IRArrayRef, cellNameTable: [String: UInt64]) throws {
-        // Convert AREF to PLACEMENT + repetition
-        // Use simple PLACEMENT (record type 17) with grid repetition
-        w.writeByte(OASISRecordType.placement.rawValue)
-        // info-byte: C X Y R set
-        let infoByte: UInt8 = 0b1011_1000 // C, X, Y, R
+        guard a.columns > 0, a.rows > 0, a.referencePoints.count >= 3 else {
+            throw OASISError.numericOverflow(
+                context: "array placement repetition",
+                value: "\(a.columns)x\(a.rows)"
+            )
+        }
+
+        if a.columns == 1 && a.rows == 1 {
+            try writePlacement(&w, IRCellRef(
+                cellName: a.cellName,
+                origin: a.referencePoints[0],
+                transform: a.transform,
+                properties: a.properties
+            ), cellNameTable: cellNameTable)
+            return
+        }
+
+        let hasTransform = a.transform.mirrorX
+            || a.transform.magnification != 1.0
+            || a.transform.angle != 0.0
+
+        // Convert AREF to PLACEMENT + repetition.
+        w.writeByte(hasTransform ? OASISRecordType.placementT.rawValue : OASISRecordType.placement.rawValue)
+        // info-byte: C X Y R plus optional transform fields.
+        var infoByte: UInt8 = 0b1011_1000 // C, X, Y, R
+        if hasTransform {
+            if a.transform.magnification != 1.0 { infoByte |= 0b0000_0100 }
+            if a.transform.angle != 0.0 { infoByte |= 0b0000_0010 }
+            if a.transform.mirrorX { infoByte |= 0b0000_0001 }
+        }
         w.writeByte(infoByte)
         try w.writeAString(a.cellName)
 
-        // Compute spacings from reference points
-        let colSpacing: UInt64
-        let rowSpacing: UInt64
-        if a.referencePoints.count >= 3 && a.columns > 0 && a.rows > 0 {
-            colSpacing = UInt64(abs(a.referencePoints[1].x - a.referencePoints[0].x) / Int32(a.columns))
-            rowSpacing = UInt64(abs(a.referencePoints[2].y - a.referencePoints[0].y) / Int32(a.rows))
-        } else {
-            colSpacing = 0
-            rowSpacing = 0
+        if hasTransform {
+            if a.transform.magnification != 1.0 {
+                w.writeReal(a.transform.magnification)
+            }
+            if a.transform.angle != 0.0 {
+                w.writeReal(a.transform.angle)
+            }
         }
 
-        let rep = OASISRepetition.grid(
+        let origin = a.referencePoints[0]
+        let colStep = try arrayStep(
+            from: origin,
+            to: a.referencePoints[1],
+            count: Int64(a.columns),
+            axis: "column"
+        )
+        let rowStep = try arrayStep(
+            from: origin,
+            to: a.referencePoints[2],
+            count: Int64(a.rows),
+            axis: "row"
+        )
+        let rep = repetitionForArray(
             columns: UInt64(a.columns),
             rows: UInt64(a.rows),
-            colSpacing: colSpacing,
-            rowSpacing: rowSpacing
+            colStep: colStep,
+            rowStep: rowStep
         )
 
-        w.writeSignedInteger(Int64(a.referencePoints[0].x))
-        w.writeSignedInteger(Int64(a.referencePoints[0].y))
+        w.writeSignedInteger(Int64(origin.x))
+        w.writeSignedInteger(Int64(origin.y))
         w.writeRepetition(rep)
+    }
+
+    private static func arrayStep(
+        from origin: IRPoint,
+        to endpoint: IRPoint,
+        count: Int64,
+        axis: String
+    ) throws -> OASISDisplacement {
+        let dx = Int64(endpoint.x) - Int64(origin.x)
+        let dy = Int64(endpoint.y) - Int64(origin.y)
+        guard dx % count == 0, dy % count == 0 else {
+            throw OASISError.unsupportedGeometry(
+                context: "array placement repetition",
+                reason: "OASIS array \(axis) reference vector cannot be represented as an integral database-unit step."
+            )
+        }
+        return OASISDisplacement(dx: dx / count, dy: dy / count)
+    }
+
+    private static func repetitionForArray(
+        columns: UInt64,
+        rows: UInt64,
+        colStep: OASISDisplacement,
+        rowStep: OASISDisplacement
+    ) -> OASISRepetition {
+        if rows == 1 {
+            if colStep.dy == 0 && colStep.dx >= 0 {
+                return .uniformRow(count: columns, spacing: UInt64(colStep.dx))
+            }
+            return .variableDisplacementRow(
+                displacements: Array(repeating: colStep, count: Int(columns - 1))
+            )
+        }
+        if columns == 1 {
+            if rowStep.dx == 0 && rowStep.dy >= 0 {
+                return .uniformColumn(count: rows, spacing: UInt64(rowStep.dy))
+            }
+            return .variableDisplacementColumn(
+                displacements: Array(repeating: rowStep, count: Int(rows - 1))
+            )
+        }
+        if colStep.dy == 0 && rowStep.dx == 0 && colStep.dx >= 0 && rowStep.dy >= 0 {
+            return .grid(
+                columns: columns,
+                rows: rows,
+                colSpacing: UInt64(colStep.dx),
+                rowSpacing: UInt64(rowStep.dy)
+            )
+        }
+        return .arbitraryGrid(
+            columns: columns,
+            rows: rows,
+            colDisplacement: colStep,
+            rowDisplacement: rowStep
+        )
     }
 
     // MARK: - Helpers
 
     /// Convert absolute point sequence to delta-encoded (skip closing point for polygons).
-    private static func absoluteToDeltas(_ points: [IRPoint]) -> [IRPoint] {
+    private static func absoluteToDeltas(_ points: [IRPoint], context: String) throws -> [IRPoint] {
         guard points.count > 1 else { return points }
 
         // For polygons, exclude the closing point (last == first)
@@ -289,11 +425,31 @@ public enum OASISLibraryWriter {
         var deltas: [IRPoint] = []
         deltas.reserveCapacity(effectivePoints.count - 1)
         for i in 1..<effectivePoints.count {
-            let dx = effectivePoints[effectivePoints.startIndex + i].x - effectivePoints[effectivePoints.startIndex + i - 1].x
-            let dy = effectivePoints[effectivePoints.startIndex + i].y - effectivePoints[effectivePoints.startIndex + i - 1].y
+            let current = effectivePoints[effectivePoints.startIndex + i]
+            let previous = effectivePoints[effectivePoints.startIndex + i - 1]
+            let dx = try checkedDelta(current.x, previous.x, context: context)
+            let dy = try checkedDelta(current.y, previous.y, context: context)
             deltas.append(IRPoint(x: dx, y: dy))
         }
         return deltas
+    }
+
+    private static func checkedDelta(_ current: Int32, _ previous: Int32, context: String) throws -> Int32 {
+        let delta = Int64(current) - Int64(previous)
+        guard delta >= Int64(Int32.min), delta <= Int64(Int32.max) else {
+            throw OASISError.numericOverflow(context: "\(context) point delta", value: String(delta))
+        }
+        return Int32(delta)
+    }
+
+    private static func signedDoubleArea(_ points: [IRPoint]) -> Int64 {
+        var area: Int64 = 0
+        for index in 0..<(points.count - 1) {
+            let first = points[index]
+            let second = points[index + 1]
+            area += Int64(first.x) * Int64(second.y) - Int64(second.x) * Int64(first.y)
+        }
+        return area
     }
 
     /// Write PROPERTY records for an element's IR properties.
@@ -317,16 +473,22 @@ public enum OASISLibraryWriter {
     }
 
     /// Map IRPathType to OASIS extension scheme value.
-    private static func oasisExtensionScheme(_ pathType: IRPathType) -> UInt64 {
+    private static func oasisExtensionScheme(_ pathType: IRPathType) throws -> UInt64 {
         switch pathType {
         case .flush:
             return 0           // both ends flush (0b0000)
         case .halfWidthExtend:
             return 5           // both ends halfwidth (0b0101)
         case .round:
-            return 5           // approximate as halfwidth (0b0101)
+            throw OASISError.unsupportedGeometry(
+                context: "path",
+                reason: "OASIS PATH round end caps are not represented by this writer without approximation."
+            )
         case .customExtension:
-            return 5           // approximate as halfwidth (0b0101)
+            throw OASISError.unsupportedGeometry(
+                context: "path",
+                reason: "OASIS PATH custom extensions are not represented by this writer without approximation."
+            )
         }
     }
 }

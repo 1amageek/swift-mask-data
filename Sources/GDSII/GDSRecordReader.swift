@@ -66,14 +66,20 @@ public struct GDSRecordReader: Sendable {
     private func parsePayload(dataType: GDSDataType, start: Int, length: Int, offset: Int) throws -> GDSRecordPayload {
         switch dataType {
         case .noData:
+            guard length == 0 else {
+                throw GDSError.invalidPayloadLength(offset: offset, dataType: dataType, length: length, alignment: 0)
+            }
             return .noData
 
         case .bitArray:
-            guard length >= 2 else { return .bitArray(0) }
+            guard length == 2 else {
+                throw GDSError.invalidPayloadLength(offset: offset, dataType: dataType, length: length, alignment: 2)
+            }
             let value = UInt16(data[start]) << 8 | UInt16(data[start + 1])
             return .bitArray(value)
 
         case .int16:
+            try validatePayloadLength(length, dataType: dataType, alignment: 2, offset: offset)
             let count = length / 2
             var values: [Int16] = []
             values.reserveCapacity(count)
@@ -85,6 +91,7 @@ public struct GDSRecordReader: Sendable {
             return .int16(values)
 
         case .int32:
+            try validatePayloadLength(length, dataType: dataType, alignment: 4, offset: offset)
             let count = length / 4
             var values: [Int32] = []
             values.reserveCapacity(count)
@@ -101,10 +108,11 @@ public struct GDSRecordReader: Sendable {
             return .int32(values)
 
         case .real4:
-            // Real4 is essentially unused in GDSII. Treat as raw data / skip.
+            try validatePayloadLength(length, dataType: dataType, alignment: 4, offset: offset)
             return .noData
 
         case .real8:
+            try validatePayloadLength(length, dataType: dataType, alignment: 8, offset: offset)
             let count = length / 8
             var values: [Double] = []
             values.reserveCapacity(count)
@@ -129,6 +137,22 @@ public struct GDSRecordReader: Sendable {
                 throw GDSError.invalidString(offset: offset)
             }
             return .string(str)
+        }
+    }
+
+    private func validatePayloadLength(
+        _ length: Int,
+        dataType: GDSDataType,
+        alignment: Int,
+        offset: Int
+    ) throws {
+        guard alignment > 0, length % alignment == 0 else {
+            throw GDSError.invalidPayloadLength(
+                offset: offset,
+                dataType: dataType,
+                length: length,
+                alignment: alignment
+            )
         }
     }
 }

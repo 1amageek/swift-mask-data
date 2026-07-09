@@ -101,6 +101,23 @@ struct IRTechLibraryTests {
         #expect(decoded.antennaRules.count == 1)
     }
 
+    @Test func decodingRejectsMissingRequiredFields() {
+        let data = Data(#"{"name":"broken","layers":[],"vias":[],"sites":[],"designRules":[],"enclosureRules":[],"antennaRules":[],"metadata":{}}"#.utf8)
+
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(IRTechLibrary.self, from: data)
+        }
+    }
+
+    @Test func decodingAllowsLegacyMissingExtensionAndMinimumCutRules() throws {
+        let data = Data(#"{"name":"legacy","dbuPerMicron":1000,"layers":[],"vias":[],"sites":[],"designRules":[],"enclosureRules":[],"antennaRules":[],"metadata":{}}"#.utf8)
+
+        let decoded = try JSONDecoder().decode(IRTechLibrary.self, from: data)
+
+        #expect(decoded.extensionRules.isEmpty)
+        #expect(decoded.minimumCutRules.isEmpty)
+    }
+
     @Test func hashableConformance() {
         let a = IRTechLayerDef(name: "M1", type: .routing, gdsLayer: 10)
         let b = IRTechLayerDef(name: "M1", type: .routing, gdsLayer: 10)
@@ -109,7 +126,7 @@ struct IRTechLibraryTests {
         #expect(a == b)
         #expect(a != c)
 
-        var set: Set<IRTechLayerDef> = [a, b, c]
+        let set: Set<IRTechLayerDef> = [a, b, c]
         #expect(set.count == 2)
     }
 }
@@ -117,11 +134,11 @@ struct IRTechLibraryTests {
 @Suite("IRTechLayerType")
 struct IRTechLayerTypeTests {
 
-    @Test func allCases() {
+    @Test func allCases() throws {
         let types: [IRTechLayerType] = [.routing, .cut, .masterslice, .overlap, .implant]
         for t in types {
-            let data = try! JSONEncoder().encode(t)
-            let decoded = try! JSONDecoder().decode(IRTechLayerType.self, from: data)
+            let data = try JSONEncoder().encode(t)
+            let decoded = try JSONDecoder().decode(IRTechLayerType.self, from: data)
             #expect(decoded == t)
         }
     }
@@ -130,14 +147,14 @@ struct IRTechLayerTypeTests {
 @Suite("IRTechFillPattern")
 struct IRTechFillPatternTests {
 
-    @Test func allCases() {
+    @Test func allCases() throws {
         let patterns: [IRTechFillPattern] = [
             .solid, .forwardDiagonal, .backwardDiagonal, .crosshatch,
             .horizontal, .vertical, .grid, .dots
         ]
         for p in patterns {
-            let data = try! JSONEncoder().encode(p)
-            let decoded = try! JSONDecoder().decode(IRTechFillPattern.self, from: data)
+            let data = try JSONEncoder().encode(p)
+            let decoded = try JSONDecoder().decode(IRTechFillPattern.self, from: data)
             #expect(decoded == p)
         }
     }

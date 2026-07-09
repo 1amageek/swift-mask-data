@@ -121,4 +121,34 @@ struct MaskGeometryBugFixTests {
         let stacked = Region(layer: 1, polygons: [rect(0, 0, 100, 500), rect(0, 500, 100, 1000)])
         #expect(bands(stacked) == [[0, 100, 0, 1000]], "stacked same-x rows must merge")
     }
+
+    @Test func scanlineSweepRejectsInvalidBands() {
+        #expect(throws: ScanlineSweep.SweepError.invalidBand(
+            input: "a",
+            index: 0,
+            xMin: 0,
+            xMax: 0,
+            yMin: 0,
+            yMax: 10
+        )) {
+            try ScanlineSweep.checkedSweepRows(
+                [RegionBoolean.Band(xMin: 0, xMax: 0, yMin: 0, yMax: 10)],
+                []
+            ) { _, _, _, _ in }
+        }
+
+        #expect(throws: ScanlineSweep.SweepError.invalidBand(
+            input: "b",
+            index: 0,
+            xMin: 0,
+            xMax: 10,
+            yMin: 10,
+            yMax: 10
+        )) {
+            try ScanlineSweep.checkedSweepRows(
+                [],
+                [RegionBoolean.Band(xMin: 0, xMax: 10, yMin: 10, yMax: 10)]
+            ) { _, _, _, _ in }
+        }
+    }
 }

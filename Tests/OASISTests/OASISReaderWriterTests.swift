@@ -181,4 +181,108 @@ struct OASISRepetitionTests {
         let decoded = try reader.readRepetition()
         #expect(decoded == rep)
     }
+
+    @Test func arbitraryGridUsesSpecType8() throws {
+        let rep = OASISRepetition.arbitraryGrid(
+            columns: 2,
+            rows: 3,
+            colDisplacement: OASISDisplacement(dx: 10, dy: 5),
+            rowDisplacement: OASISDisplacement(dx: -2, dy: 20)
+        )
+        var writer = OASISWriter()
+        writer.writeRepetition(rep)
+
+        #expect(writer.data.first == 8)
+        var reader = OASISReader(data: writer.data)
+        let decoded = try reader.readRepetition()
+        #expect(decoded == rep)
+    }
+
+    @Test func arbitraryGridWritesSpecGDeltaDirections() throws {
+        let rep = OASISRepetition.arbitraryGrid(
+            columns: 2,
+            rows: 2,
+            colDisplacement: OASISDisplacement(dx: 5, dy: 5),
+            rowDisplacement: OASISDisplacement(dx: -3, dy: 3)
+        )
+        var writer = OASISWriter()
+        writer.writeRepetition(rep)
+
+        #expect(Array(writer.data.prefix(5)) == [8, 0, 0, 88, 58])
+        var reader = OASISReader(data: writer.data)
+        let decoded = try reader.readRepetition()
+        #expect(decoded == rep)
+    }
+
+    @Test func repeatedDisplacementUsesSpecType9() throws {
+        let rep = OASISRepetition.variableDisplacementRow(displacements: [
+            OASISDisplacement(dx: 10, dy: 5),
+            OASISDisplacement(dx: 10, dy: 5),
+        ])
+        var writer = OASISWriter()
+        writer.writeRepetition(rep)
+
+        #expect(writer.data.first == 9)
+        var reader = OASISReader(data: writer.data)
+        let decoded = try reader.readRepetition()
+        #expect(decoded == rep)
+    }
+
+    @Test func repeatedDisplacementWritesSpecGeneralGDeltaPayload() throws {
+        let rep = OASISRepetition.variableDisplacementRow(displacements: [
+            OASISDisplacement(dx: 7, dy: -11),
+            OASISDisplacement(dx: 7, dy: -11),
+        ])
+        var writer = OASISWriter()
+        writer.writeRepetition(rep)
+
+        #expect(Array(writer.data.prefix(4)) == [9, 1, 29, 23])
+        var reader = OASISReader(data: writer.data)
+        let decoded = try reader.readRepetition()
+        #expect(decoded == rep)
+    }
+
+    @Test func variableDisplacementUsesSpecType10() throws {
+        let rep = OASISRepetition.variableDisplacementRow(displacements: [
+            OASISDisplacement(dx: 10, dy: 5),
+            OASISDisplacement(dx: -2, dy: 20),
+        ])
+        var writer = OASISWriter()
+        writer.writeRepetition(rep)
+
+        #expect(writer.data.first == 10)
+        var reader = OASISReader(data: writer.data)
+        let decoded = try reader.readRepetition()
+        #expect(decoded == rep)
+    }
+
+    @Test func gridScaledVariableRowConsumesGridFactor() throws {
+        var reader = OASISReader(data: Data([5, 1, 10, 2, 3]))
+
+        let decoded = try reader.readRepetition()
+
+        #expect(decoded == .variableRow(spacings: [20, 30]))
+        #expect(reader.currentOffset == 5)
+    }
+
+    @Test func gridScaledVariableColumnConsumesGridFactor() throws {
+        var reader = OASISReader(data: Data([7, 1, 4, 5, 6]))
+
+        let decoded = try reader.readRepetition()
+
+        #expect(decoded == .variableColumn(spacings: [20, 24]))
+        #expect(reader.currentOffset == 5)
+    }
+
+    @Test func gridScaledVariableDisplacementConsumesGridFactor() throws {
+        var reader = OASISReader(data: Data([11, 1, 10, 32, 50]))
+
+        let decoded = try reader.readRepetition()
+
+        #expect(decoded == .variableDisplacementRow(displacements: [
+            OASISDisplacement(dx: 20, dy: 0),
+            OASISDisplacement(dx: 0, dy: 30),
+        ]))
+        #expect(reader.currentOffset == 5)
+    }
 }

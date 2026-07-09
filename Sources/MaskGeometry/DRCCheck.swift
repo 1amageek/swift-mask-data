@@ -420,29 +420,33 @@ enum DRCCheck {
     ) -> [IREdgePair] {
         var violations: [IREdgePair] = []
 
-        ScanlineSweep.sweepRows(outerBands, innerBands) { yMin, yMax, outerIntervals, innerIntervals in
-            guard !innerIntervals.isEmpty else { return }
-            let outerUnion = RegionBoolean.unionIntervals(outerIntervals)
+        do {
+            try ScanlineSweep.checkedSweepRows(outerBands, innerBands) { yMin, yMax, outerIntervals, innerIntervals in
+                guard !innerIntervals.isEmpty else { return }
+                let outerUnion = RegionBoolean.unionIntervals(outerIntervals)
 
-            for inner in innerIntervals {
-                guard let outerInterval = coveringInterval(of: inner, in: outerUnion) else {
-                    continue
-                }
+                for inner in innerIntervals {
+                    guard let outerInterval = coveringInterval(of: inner, in: outerUnion) else {
+                        continue
+                    }
 
-                let leftEnclosure = inner.lo - outerInterval.lo
-                if leftEnclosure < minEnclosure {
-                    let e1 = verticalEdge(x: outerInterval.lo, yMin: yMin, yMax: yMax)
-                    let e2 = verticalEdge(x: inner.lo, yMin: yMin, yMax: yMax)
-                    violations.append(IREdgePair(edge1: e1, edge2: e2))
-                }
+                    let leftEnclosure = inner.lo - outerInterval.lo
+                    if leftEnclosure < minEnclosure {
+                        let e1 = verticalEdge(x: outerInterval.lo, yMin: yMin, yMax: yMax)
+                        let e2 = verticalEdge(x: inner.lo, yMin: yMin, yMax: yMax)
+                        violations.append(IREdgePair(edge1: e1, edge2: e2))
+                    }
 
-                let rightEnclosure = outerInterval.hi - inner.hi
-                if rightEnclosure < minEnclosure {
-                    let e1 = verticalEdge(x: inner.hi, yMin: yMin, yMax: yMax)
-                    let e2 = verticalEdge(x: outerInterval.hi, yMin: yMin, yMax: yMax)
-                    violations.append(IREdgePair(edge1: e1, edge2: e2))
+                    let rightEnclosure = outerInterval.hi - inner.hi
+                    if rightEnclosure < minEnclosure {
+                        let e1 = verticalEdge(x: inner.hi, yMin: yMin, yMax: yMax)
+                        let e2 = verticalEdge(x: outerInterval.hi, yMin: yMin, yMax: yMax)
+                        violations.append(IREdgePair(edge1: e1, edge2: e2))
+                    }
                 }
             }
+        } catch {
+            return []
         }
 
         return violations

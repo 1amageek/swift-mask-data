@@ -202,26 +202,28 @@ public enum GDSLibraryReader {
     }
 
     private static func readBoundary(_ r: inout GDSRecordReader) throws -> IRBoundary {
-        var layer: Int16 = 0
-        var datatype: Int16 = 0
+        var layer: Int16?
+        var datatype: Int16?
         var points: [IRPoint] = []
         var properties: [IRProperty] = []
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .layer:
-                if case .int16(let v) = rec.payload, let first = v.first { layer = first }
+                layer = try requiredInt16(rec.payload, recordType: .layer, context: "boundary")
             case .datatype:
-                if case .int16(let v) = rec.payload, let first = v.first { datatype = first }
+                datatype = try requiredInt16(rec.payload, recordType: .datatype, context: "boundary")
             case .xy:
                 // Multi-XY: append points from consecutive XY records
-                points.append(contentsOf: extractPoints(rec.payload))
+                points.append(contentsOf: try extractPoints(rec.payload, context: "boundary"))
             case .propattr:
                 let prop = try readProperty(rec, r: &r)
                 properties.append(prop)
@@ -229,32 +231,38 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "boundary")
+        guard let layer else { throw GDSError.missingRequiredRecord(.layer, context: "boundary") }
+        guard let datatype else { throw GDSError.missingRequiredRecord(.datatype, context: "boundary") }
+        guard !points.isEmpty else { throw GDSError.missingRequiredRecord(.xy, context: "boundary") }
 
         return IRBoundary(layer: layer, datatype: datatype, points: points, properties: properties)
     }
 
     private static func readPath(_ r: inout GDSRecordReader) throws -> IRPath {
-        var layer: Int16 = 0
-        var datatype: Int16 = 0
+        var layer: Int16?
+        var datatype: Int16?
         var pathType: IRPathType = .flush
         var width: Int32 = 0
         var points: [IRPoint] = []
         var properties: [IRProperty] = []
         var beginExtension: Int32?
         var endExtension: Int32?
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .layer:
-                if case .int16(let v) = rec.payload, let first = v.first { layer = first }
+                layer = try requiredInt16(rec.payload, recordType: .layer, context: "path")
             case .datatype:
-                if case .int16(let v) = rec.payload, let first = v.first { datatype = first }
+                datatype = try requiredInt16(rec.payload, recordType: .datatype, context: "path")
             case .pathtype:
                 if case .int16(let v) = rec.payload, let first = v.first {
                     pathType = IRPathType(rawValue: first) ?? .flush
@@ -267,7 +275,7 @@ public enum GDSLibraryReader {
                 if case .int32(let v) = rec.payload, let first = v.first { endExtension = first }
             case .xy:
                 // Multi-XY: append points from consecutive XY records
-                points.append(contentsOf: extractPoints(rec.payload))
+                points.append(contentsOf: try extractPoints(rec.payload, context: "path"))
             case .propattr:
                 let prop = try readProperty(rec, r: &r)
                 properties.append(prop)
@@ -275,6 +283,10 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "path")
+        guard let layer else { throw GDSError.missingRequiredRecord(.layer, context: "path") }
+        guard let datatype else { throw GDSError.missingRequiredRecord(.datatype, context: "path") }
+        guard !points.isEmpty else { throw GDSError.missingRequiredRecord(.xy, context: "path") }
 
         return IRPath(
             layer: layer, datatype: datatype, pathType: pathType,
@@ -284,21 +296,27 @@ public enum GDSLibraryReader {
     }
 
     private static func readCellRef(_ r: inout GDSRecordReader) throws -> IRCellRef {
-        var cellName = ""
-        var origin = IRPoint.zero
+        var cellName: String?
+        var origin: IRPoint?
         var transform = IRTransform.identity
         var properties: [IRProperty] = []
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .sname:
-                if case .string(let s) = rec.payload { cellName = s }
+                if case .string(let s) = rec.payload {
+                    cellName = s
+                } else {
+                    throw GDSError.missingRequiredRecord(.sname, context: "sref invalid payload")
+                }
             case .strans:
                 transform = readTransformStart(rec.payload, transform: transform)
             case .mag:
@@ -310,7 +328,7 @@ public enum GDSLibraryReader {
                     transform = IRTransform(mirrorX: transform.mirrorX, magnification: transform.magnification, angle: first)
                 }
             case .xy:
-                let pts = extractPoints(rec.payload)
+                let pts = try extractPoints(rec.payload, context: "sref")
                 if let first = pts.first { origin = first }
             case .propattr:
                 let prop = try readProperty(rec, r: &r)
@@ -319,28 +337,39 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "sref")
+        guard let cellName, !cellName.isEmpty else {
+            throw GDSError.missingRequiredRecord(.sname, context: "sref")
+        }
+        guard let origin else { throw GDSError.missingRequiredRecord(.xy, context: "sref") }
 
         return IRCellRef(cellName: cellName, origin: origin, transform: transform, properties: properties)
     }
 
     private static func readArrayRef(_ r: inout GDSRecordReader) throws -> IRArrayRef {
-        var cellName = ""
+        var cellName: String?
         var transform = IRTransform.identity
-        var columns: Int16 = 0
-        var rows: Int16 = 0
+        var columns: Int16?
+        var rows: Int16?
         var referencePoints: [IRPoint] = []
         var properties: [IRProperty] = []
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .sname:
-                if case .string(let s) = rec.payload { cellName = s }
+                if case .string(let s) = rec.payload {
+                    cellName = s
+                } else {
+                    throw GDSError.missingRequiredRecord(.sname, context: "aref invalid payload")
+                }
             case .strans:
                 transform = readTransformStart(rec.payload, transform: transform)
             case .mag:
@@ -355,10 +384,12 @@ public enum GDSLibraryReader {
                 if case .int16(let v) = rec.payload, v.count >= 2 {
                     columns = v[0]
                     rows = v[1]
+                } else {
+                    throw GDSError.missingRequiredRecord(.colrow, context: "aref invalid payload")
                 }
             case .xy:
                 // Multi-XY: append points from consecutive XY records
-                referencePoints.append(contentsOf: extractPoints(rec.payload))
+                referencePoints.append(contentsOf: try extractPoints(rec.payload, context: "aref"))
             case .propattr:
                 let prop = try readProperty(rec, r: &r)
                 properties.append(prop)
@@ -366,30 +397,40 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "aref")
+        guard let cellName, !cellName.isEmpty else {
+            throw GDSError.missingRequiredRecord(.sname, context: "aref")
+        }
+        guard let columns, let rows, columns > 0, rows > 0 else {
+            throw GDSError.missingRequiredRecord(.colrow, context: "aref")
+        }
+        guard !referencePoints.isEmpty else { throw GDSError.missingRequiredRecord(.xy, context: "aref") }
 
         return IRArrayRef(cellName: cellName, transform: transform, columns: columns, rows: rows, referencePoints: referencePoints, properties: properties)
     }
 
     private static func readText(_ r: inout GDSRecordReader) throws -> IRText {
-        var layer: Int16 = 0
-        var texttype: Int16 = 0
+        var layer: Int16?
+        var texttype: Int16?
         var transform = IRTransform.identity
-        var position = IRPoint.zero
-        var string = ""
+        var position: IRPoint?
+        var string: String?
         var properties: [IRProperty] = []
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .layer:
-                if case .int16(let v) = rec.payload, let first = v.first { layer = first }
+                layer = try requiredInt16(rec.payload, recordType: .layer, context: "text")
             case .texttype:
-                if case .int16(let v) = rec.payload, let first = v.first { texttype = first }
+                texttype = try requiredInt16(rec.payload, recordType: .texttype, context: "text")
             case .strans:
                 transform = readTransformStart(rec.payload, transform: transform)
             case .mag:
@@ -401,7 +442,7 @@ public enum GDSLibraryReader {
                     transform = IRTransform(mirrorX: transform.mirrorX, magnification: transform.magnification, angle: first)
                 }
             case .xy:
-                let pts = extractPoints(rec.payload)
+                let pts = try extractPoints(rec.payload, context: "text")
                 if let first = pts.first { position = first }
             case .string:
                 if case .string(let s) = rec.payload { string = s }
@@ -412,30 +453,37 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "text")
+        guard let layer else { throw GDSError.missingRequiredRecord(.layer, context: "text") }
+        guard let texttype else { throw GDSError.missingRequiredRecord(.texttype, context: "text") }
+        guard let position else { throw GDSError.missingRequiredRecord(.xy, context: "text") }
+        guard let string else { throw GDSError.missingRequiredRecord(.string, context: "text") }
 
         return IRText(layer: layer, texttype: texttype, transform: transform, position: position, string: string, properties: properties)
     }
 
     private static func readBox(_ r: inout GDSRecordReader) throws -> IRBoundary {
-        var layer: Int16 = 0
-        var boxtype: Int16 = 0
+        var layer: Int16?
+        var boxtype: Int16?
         var points: [IRPoint] = []
         var properties: [IRProperty] = []
+        var foundEndel = false
 
         while r.hasMore {
             let nextType = try r.peekRecordType()
             if nextType == .endel {
                 _ = try r.readRecord()
+                foundEndel = true
                 break
             }
             let rec = try r.readRecord()
             switch rec.recordType {
             case .layer:
-                if case .int16(let v) = rec.payload, let first = v.first { layer = first }
+                layer = try requiredInt16(rec.payload, recordType: .layer, context: "box")
             case .boxtype:
-                if case .int16(let v) = rec.payload, let first = v.first { boxtype = first }
+                boxtype = try requiredInt16(rec.payload, recordType: .boxtype, context: "box")
             case .xy:
-                points.append(contentsOf: extractPoints(rec.payload))
+                points.append(contentsOf: try extractPoints(rec.payload, context: "box"))
             case .propattr:
                 let prop = try readProperty(rec, r: &r)
                 properties.append(prop)
@@ -443,6 +491,10 @@ public enum GDSLibraryReader {
                 break
             }
         }
+        try requireEndel(foundEndel, context: "box")
+        guard let layer else { throw GDSError.missingRequiredRecord(.layer, context: "box") }
+        guard let boxtype else { throw GDSError.missingRequiredRecord(.boxtype, context: "box") }
+        guard !points.isEmpty else { throw GDSError.missingRequiredRecord(.xy, context: "box") }
 
         // BOX uses boxtype in the datatype field (like KLayout "as rectangles" mode)
         return IRBoundary(layer: layer, datatype: boxtype, points: points, properties: properties)
@@ -450,8 +502,13 @@ public enum GDSLibraryReader {
 
     // MARK: - Helpers
 
-    private static func extractPoints(_ payload: GDSRecordPayload) -> [IRPoint] {
-        guard case .int32(let values) = payload else { return [] }
+    private static func extractPoints(_ payload: GDSRecordPayload, context: String) throws -> [IRPoint] {
+        guard case .int32(let values) = payload else {
+            throw GDSError.missingRequiredRecord(.xy, context: "\(context) invalid payload")
+        }
+        guard values.count % 2 == 0 else {
+            throw GDSError.missingRequiredRecord(.xy, context: "\(context) has an unpaired coordinate")
+        }
         var points: [IRPoint] = []
         points.reserveCapacity(values.count / 2)
         var i = 0
@@ -460,6 +517,23 @@ public enum GDSLibraryReader {
             i += 2
         }
         return points
+    }
+
+    private static func requiredInt16(
+        _ payload: GDSRecordPayload,
+        recordType: GDSRecordType,
+        context: String
+    ) throws -> Int16 {
+        guard case .int16(let values) = payload, let first = values.first else {
+            throw GDSError.missingRequiredRecord(recordType, context: "\(context) invalid payload")
+        }
+        return first
+    }
+
+    private static func requireEndel(_ foundEndel: Bool, context: String) throws {
+        guard foundEndel else {
+            throw GDSError.missingRequiredRecord(.endel, context: context)
+        }
     }
 
     private static func readTransformStart(_ payload: GDSRecordPayload, transform: IRTransform) -> IRTransform {

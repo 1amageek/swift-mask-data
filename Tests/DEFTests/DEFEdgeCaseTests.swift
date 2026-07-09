@@ -219,9 +219,9 @@ struct DEFRoundTripFidelityTests {
 @Suite("DEF IR Converter Edge Cases")
 struct DEFIRConverterEdgeCaseTests {
 
-    @Test func emptyDesign() {
+    @Test func emptyDesign() throws {
         let doc = DEFDocument(designName: "empty")
-        let lib = DEFIRConverter.toIRLibrary(doc)
+        let lib = try DEFIRConverter.toIRLibrary(doc)
         #expect(lib.cells.count == 1)
         #expect(lib.cells[0].elements.isEmpty)
     }
@@ -234,7 +234,7 @@ struct DEFIRConverterEdgeCaseTests {
         }
     }
 
-    @Test func convertDEFToIRPreservesCoordinates() {
+    @Test func convertDEFToIRPreservesCoordinates() throws {
         let doc = DEFDocument(
             designName: "test",
             dieArea: DEFDieArea(x1: -100, y1: -200, x2: 5000, y2: 6000),
@@ -242,7 +242,7 @@ struct DEFIRConverterEdgeCaseTests {
                 DEFComponent(name: "u1", macro: "INV", x: 1000, y: 2000, orientation: .s),
             ]
         )
-        let lib = DEFIRConverter.toIRLibrary(doc)
+        let lib = try DEFIRConverter.toIRLibrary(doc)
         let cell = lib.cells[0]
 
         // First element is dieArea boundary

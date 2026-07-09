@@ -26,7 +26,7 @@ struct FormatDetectorTests {
 
     @Test func detectGDSII() {
         // GDSII header: 2 bytes length + record type 0x0002
-        var data = Data([0x00, 0x06, 0x00, 0x02, 0x00, 0x07])
+        let data = Data([0x00, 0x06, 0x00, 0x02, 0x00, 0x07])
         #expect(FormatDetector.detect(data) == .gdsii)
     }
 

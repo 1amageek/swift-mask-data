@@ -5,12 +5,19 @@ import LayoutIR
 enum RegionBoolean {
 
     static func perform(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
-        // Check if all polygons are Manhattan
+        do {
+            return try checkedPerform(op, a, b)
+        } catch {
+            return performGeneral(op, a, b)
+        }
+    }
+
+    static func checkedPerform(_ op: BooleanOperation, _ a: Region, _ b: Region) throws -> Region {
         let allManhattan = a.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
                         && b.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
 
         if allManhattan {
-            return performManhattan(op, a, b)
+            return try performManhattan(op, a, b)
         } else {
             return performGeneral(op, a, b)
         }
@@ -18,10 +25,10 @@ enum RegionBoolean {
 
     // MARK: - Manhattan Path (scanline decomposition)
 
-    private static func performManhattan(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
+    private static func performManhattan(_ op: BooleanOperation, _ a: Region, _ b: Region) throws -> Region {
         var resultBands: [Band] = []
 
-        ScanlineSweep.sweepRows(decompose(a), decompose(b)) { yMin, yMax, intervalsA, intervalsB in
+        try ScanlineSweep.checkedSweepRows(decompose(a), decompose(b)) { yMin, yMax, intervalsA, intervalsB in
             let result: [Interval]
             switch op {
             case .or:
@@ -93,8 +100,16 @@ enum RegionBoolean {
     /// one connected component would fragment differently depending on what
     /// unrelated geometry happens to share the region.
     static func unionBands(_ region: Region) -> [Band] {
+        do {
+            return try checkedUnionBands(region)
+        } catch {
+            return []
+        }
+    }
+
+    static func checkedUnionBands(_ region: Region) throws -> [Band] {
         var rows: [Band] = []
-        ScanlineSweep.sweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
+        try ScanlineSweep.checkedSweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
             for interval in unionIntervals(intervals) {
                 rows.append(Band(xMin: interval.lo, xMax: interval.hi, yMin: yMin, yMax: yMax))
             }

@@ -265,41 +265,70 @@ public struct OASISWriter: Sendable {
                 writeUnsignedInteger(s)
             }
         case .arbitraryGrid(let columns, let rows, let colDisp, let rowDisp):
-            writeUnsignedInteger(5)
+            writeUnsignedInteger(8)
             writeUnsignedInteger(columns - 2)
             writeUnsignedInteger(rows - 2)
             writeGDelta(colDisp)
             writeGDelta(rowDisp)
         case .variableDisplacementRow(let displacements):
-            writeUnsignedInteger(7)
-            writeUnsignedInteger(UInt64(displacements.count + 1) - 2)
-            for d in displacements {
-                writeGDelta(d)
-            }
+            writeDisplacementRepetition(displacements)
         case .variableDisplacementColumn(let displacements):
-            writeUnsignedInteger(8)
+            writeDisplacementRepetition(displacements)
+        }
+    }
+
+    private mutating func writeDisplacementRepetition(_ displacements: [OASISDisplacement]) {
+        if let first = displacements.first, displacements.allSatisfy({ $0 == first }) {
+            writeUnsignedInteger(9)
             writeUnsignedInteger(UInt64(displacements.count + 1) - 2)
-            for d in displacements {
-                writeGDelta(d)
-            }
+            writeGDelta(first)
+            return
+        }
+        writeUnsignedInteger(10)
+        writeUnsignedInteger(UInt64(displacements.count + 1) - 2)
+        for displacement in displacements {
+            writeGDelta(displacement)
         }
     }
 
     private mutating func writeGDelta(_ d: OASISDisplacement) {
-        if d.dy == 0 && d.dx > 0 {
-            writeUnsignedInteger(UInt64(d.dx) << 3 | 0 << 1 | 0) // east
-        } else if d.dx == 0 && d.dy > 0 {
-            writeUnsignedInteger(UInt64(d.dy) << 3 | 1 << 1 | 0) // north
+        if d.dy == 0 && d.dx >= 0 {
+            writeCompactGDelta(magnitude: UInt64(d.dx), direction: 0)
+        } else if d.dx == 0 && d.dy >= 0 {
+            writeCompactGDelta(magnitude: UInt64(d.dy), direction: 1)
         } else if d.dy == 0 && d.dx < 0 {
-            writeUnsignedInteger(UInt64(-d.dx) << 3 | 2 << 1 | 0) // west
+            writeCompactGDelta(magnitude: unsignedMagnitude(d.dx), direction: 2)
         } else if d.dx == 0 && d.dy < 0 {
-            writeUnsignedInteger(UInt64(-d.dy) << 3 | 3 << 1 | 0) // south
+            writeCompactGDelta(magnitude: unsignedMagnitude(d.dy), direction: 3)
+        } else if d.dx == d.dy && d.dx >= 0 {
+            writeCompactGDelta(magnitude: UInt64(d.dx), direction: 4)
+        } else if d.dx < 0 && d.dy > 0 && unsignedMagnitude(d.dx) == UInt64(d.dy) {
+            writeCompactGDelta(magnitude: unsignedMagnitude(d.dx), direction: 5)
+        } else if d.dx == d.dy && d.dx < 0 {
+            writeCompactGDelta(magnitude: unsignedMagnitude(d.dx), direction: 6)
+        } else if d.dx > 0 && d.dy < 0 && UInt64(d.dx) == unsignedMagnitude(d.dy) {
+            writeCompactGDelta(magnitude: UInt64(d.dx), direction: 7)
         } else {
-            // General delta
-            writeUnsignedInteger(1) // flag bit = 1
-            writeSignedInteger(d.dx)
-            writeSignedInteger(d.dy)
+            writeGeneralGDelta(d)
         }
+    }
+
+    private mutating func writeCompactGDelta(magnitude: UInt64, direction: UInt64) {
+        writeUnsignedInteger((magnitude << 4) | (direction << 1))
+    }
+
+    private mutating func writeGeneralGDelta(_ d: OASISDisplacement) {
+        let xMagnitude = unsignedMagnitude(d.dx)
+        let yMagnitude = unsignedMagnitude(d.dy)
+        writeUnsignedInteger((xMagnitude << 2) | (d.dx < 0 ? 3 : 1))
+        writeUnsignedInteger((yMagnitude << 1) | (d.dy < 0 ? 1 : 0))
+    }
+
+    private func unsignedMagnitude(_ value: Int64) -> UInt64 {
+        if value >= 0 {
+            return UInt64(value)
+        }
+        return 0 &- UInt64(bitPattern: value)
     }
 
     // MARK: - CBLOCK Compression

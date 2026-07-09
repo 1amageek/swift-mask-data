@@ -22,7 +22,7 @@ public enum CIFLibraryReader {
             let parts = cmd.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
             guard let first = parts.first, !first.isEmpty else { continue }
 
-            let command = first.first!
+            guard let command = first.first else { continue }
 
             switch command {
             case "D":

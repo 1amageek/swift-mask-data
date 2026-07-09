@@ -8,18 +8,18 @@ public enum GDSLibraryWriter {
         var w = GDSRecordWriter()
 
         // HEADER
-        w.writeInt16(.header, values: [600])
+        try w.checkedWriteInt16(.header, values: [600])
 
         // BGNLIB (creation + modification timestamps, 12 int16s)
         let createdAt = library.createdAt ?? currentTimestamp()
         let modifiedAt = library.modifiedAt ?? createdAt
-        w.writeInt16(.bgnlib, values: createdAt.gdsValues + modifiedAt.gdsValues)
+        try w.checkedWriteInt16(.bgnlib, values: createdAt.gdsValues + modifiedAt.gdsValues)
 
         // LIBNAME
         try w.writeString(.libname, value: library.name)
 
         // UNITS: userUnitsPerDBU, metersPerDBU
-        w.writeReal8(.units, values: [
+        try w.checkedWriteReal8(.units, values: [
             library.units.userUnitsPerDBU,
             library.units.metersPerDBU,
         ])
@@ -30,7 +30,7 @@ public enum GDSLibraryWriter {
         }
 
         // ENDLIB
-        w.writeNoData(.endlib)
+        try w.checkedWriteNoData(.endlib)
 
         return w.data
     }
@@ -40,14 +40,14 @@ public enum GDSLibraryWriter {
     private static func writeCell(_ w: inout GDSRecordWriter, _ cell: IRCell) throws {
         let createdAt = cell.createdAt ?? currentTimestamp()
         let modifiedAt = cell.modifiedAt ?? createdAt
-        w.writeInt16(.bgnstr, values: createdAt.gdsValues + modifiedAt.gdsValues)
+        try w.checkedWriteInt16(.bgnstr, values: createdAt.gdsValues + modifiedAt.gdsValues)
         try w.writeString(.strname, value: cell.name)
 
         for element in cell.elements {
             try writeElement(&w, element)
         }
 
-        w.writeNoData(.endstr)
+        try w.checkedWriteNoData(.endstr)
     }
 
     // MARK: - Elements
@@ -68,80 +68,80 @@ public enum GDSLibraryWriter {
     }
 
     private static func writeBoundary(_ w: inout GDSRecordWriter, _ b: IRBoundary) throws {
-        w.writeNoData(.boundary)
-        w.writeInt16(.layer, values: [b.layer])
-        w.writeInt16(.datatype, values: [b.datatype])
-        w.writeXY(b.points)
+        try w.checkedWriteNoData(.boundary)
+        try w.checkedWriteInt16(.layer, values: [b.layer])
+        try w.checkedWriteInt16(.datatype, values: [b.datatype])
+        try w.checkedWriteXY(b.points)
         try writeProperties(&w, b.properties)
-        w.writeNoData(.endel)
+        try w.checkedWriteNoData(.endel)
     }
 
     private static func writePath(_ w: inout GDSRecordWriter, _ p: IRPath) throws {
-        w.writeNoData(.path)
-        w.writeInt16(.layer, values: [p.layer])
-        w.writeInt16(.datatype, values: [p.datatype])
+        try w.checkedWriteNoData(.path)
+        try w.checkedWriteInt16(.layer, values: [p.layer])
+        try w.checkedWriteInt16(.datatype, values: [p.datatype])
         if p.pathType != .flush {
-            w.writeInt16(.pathtype, values: [p.pathType.rawValue])
+            try w.checkedWriteInt16(.pathtype, values: [p.pathType.rawValue])
         }
         if p.width != 0 {
-            w.writeInt32(.width, values: [p.width])
+            try w.checkedWriteInt32(.width, values: [p.width])
         }
         if let bext = p.beginExtension {
-            w.writeInt32(.bgnextn, values: [bext])
+            try w.checkedWriteInt32(.bgnextn, values: [bext])
         }
         if let eext = p.endExtension {
-            w.writeInt32(.endextn, values: [eext])
+            try w.checkedWriteInt32(.endextn, values: [eext])
         }
-        w.writeXY(p.points)
+        try w.checkedWriteXY(p.points)
         try writeProperties(&w, p.properties)
-        w.writeNoData(.endel)
+        try w.checkedWriteNoData(.endel)
     }
 
     private static func writeCellRef(_ w: inout GDSRecordWriter, _ r: IRCellRef) throws {
-        w.writeNoData(.sref)
+        try w.checkedWriteNoData(.sref)
         try w.writeString(.sname, value: r.cellName)
-        writeTransform(&w, r.transform)
-        w.writeXY([r.origin])
+        try writeTransform(&w, r.transform)
+        try w.checkedWriteXY([r.origin])
         try writeProperties(&w, r.properties)
-        w.writeNoData(.endel)
+        try w.checkedWriteNoData(.endel)
     }
 
     private static func writeArrayRef(_ w: inout GDSRecordWriter, _ a: IRArrayRef) throws {
-        w.writeNoData(.aref)
+        try w.checkedWriteNoData(.aref)
         try w.writeString(.sname, value: a.cellName)
-        writeTransform(&w, a.transform)
-        w.writeInt16(.colrow, values: [a.columns, a.rows])
-        w.writeXY(a.referencePoints)
+        try writeTransform(&w, a.transform)
+        try w.checkedWriteInt16(.colrow, values: [a.columns, a.rows])
+        try w.checkedWriteXY(a.referencePoints)
         try writeProperties(&w, a.properties)
-        w.writeNoData(.endel)
+        try w.checkedWriteNoData(.endel)
     }
 
     private static func writeText(_ w: inout GDSRecordWriter, _ t: IRText) throws {
-        w.writeNoData(.text)
-        w.writeInt16(.layer, values: [t.layer])
-        w.writeInt16(.texttype, values: [t.texttype])
-        writeTransform(&w, t.transform)
-        w.writeXY([t.position])
+        try w.checkedWriteNoData(.text)
+        try w.checkedWriteInt16(.layer, values: [t.layer])
+        try w.checkedWriteInt16(.texttype, values: [t.texttype])
+        try writeTransform(&w, t.transform)
+        try w.checkedWriteXY([t.position])
         try w.writeString(.string, value: t.string)
         try writeProperties(&w, t.properties)
-        w.writeNoData(.endel)
+        try w.checkedWriteNoData(.endel)
     }
 
     // MARK: - Transform
 
-    private static func writeTransform(_ w: inout GDSRecordWriter, _ t: IRTransform) {
+    private static func writeTransform(_ w: inout GDSRecordWriter, _ t: IRTransform) throws {
         let hasTransform = t.mirrorX || t.magnification != 1.0 || t.angle != 0.0
         guard hasTransform else { return }
 
         var bits: UInt16 = 0
         if t.mirrorX { bits |= 0x8000 }
-        w.writeBitArray(.strans, value: bits)
+        try w.checkedWriteBitArray(.strans, value: bits)
 
         if t.magnification != 1.0 {
-            w.writeReal8(.mag, values: [t.magnification])
+            try w.checkedWriteReal8(.mag, values: [t.magnification])
         }
         if t.angle != 0.0 {
-            w.writeReal8(.angle, values: [t.angle])
+            try w.checkedWriteReal8(.angle, values: [t.angle])
         }
     }
 
@@ -149,7 +149,7 @@ public enum GDSLibraryWriter {
 
     private static func writeProperties(_ w: inout GDSRecordWriter, _ props: [IRProperty]) throws {
         for prop in props {
-            w.writeInt16(.propattr, values: [prop.attribute])
+            try w.checkedWriteInt16(.propattr, values: [prop.attribute])
             try w.writeString(.propvalue, value: prop.value)
         }
     }

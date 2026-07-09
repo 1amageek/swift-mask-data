@@ -74,6 +74,13 @@ public struct OASISReader: Sendable {
     }
 
     private func decompressDeflate(_ compressed: Data, expectedSize: Int) throws -> Data {
+        guard expectedSize > 0 else {
+            guard compressed.isEmpty else {
+                throw OASISError.decompressFailure(offset: offset)
+            }
+            return Data()
+        }
+
         let sourceSize = compressed.count
         var decompressed = Data(count: expectedSize)
 
@@ -96,8 +103,8 @@ public struct OASISReader: Sendable {
             throw OASISError.decompressFailure(offset: offset)
         }
 
-        if result < expectedSize {
-            decompressed = decompressed.prefix(result)
+        guard result == expectedSize else {
+            throw OASISError.decompressFailure(offset: offset)
         }
 
         return decompressed
@@ -152,17 +159,21 @@ public struct OASISReader: Sendable {
             return -Double(n)
         case 2:
             let n = try readUnsignedInteger()
+            try validateRealDenominator(n, typeCode: typeCode, offset: startOffset)
             return 1.0 / Double(n)
         case 3:
             let n = try readUnsignedInteger()
+            try validateRealDenominator(n, typeCode: typeCode, offset: startOffset)
             return -1.0 / Double(n)
         case 4:
             let num = try readUnsignedInteger()
             let den = try readUnsignedInteger()
+            try validateRealDenominator(den, typeCode: typeCode, offset: startOffset)
             return Double(num) / Double(den)
         case 5:
             let num = try readUnsignedInteger()
             let den = try readUnsignedInteger()
+            try validateRealDenominator(den, typeCode: typeCode, offset: startOffset)
             return -Double(num) / Double(den)
         case 6:
             let bytes = try readBytes(4)
@@ -180,6 +191,16 @@ public struct OASISReader: Sendable {
             return Double(bitPattern: bits)
         default:
             throw OASISError.unknownRealType(offset: startOffset, typeCode: typeCode)
+        }
+    }
+
+    private func validateRealDenominator(_ value: UInt64, typeCode: UInt64, offset: Int) throws {
+        guard value != 0 else {
+            throw OASISError.invalidRealValue(
+                offset: offset,
+                typeCode: typeCode,
+                reason: "zero denominator"
+            )
         }
     }
 
@@ -357,11 +378,15 @@ public struct OASISReader: Sendable {
             }
             return .variableRow(spacings: spacings)
         case 5:
-            let xDim = try readRepetitionDimension(context: "arbitrary grid columns")
-            let yDim = try readRepetitionDimension(context: "arbitrary grid rows")
-            let colDisp = try readGDelta()
-            let rowDisp = try readGDelta()
-            return .arbitraryGrid(columns: xDim, rows: yDim, colDisplacement: colDisp, rowDisplacement: rowDisp)
+            let xDim = try readRepetitionDimension(context: "grid-scaled variable row count")
+            let gridFactor = try readUnsignedInteger()
+            var spacings: [UInt64] = []
+            spacings.reserveCapacity(try checkedCollectionCount(xDim - 1, context: "grid-scaled variable row spacings"))
+            for _ in 0..<(xDim - 1) {
+                let spacing = try readUnsignedInteger()
+                spacings.append(try checkedMultiply(spacing, gridFactor, context: "grid-scaled variable row spacing"))
+            }
+            return .variableRow(spacings: spacings)
         case 6:
             let yDim = try readRepetitionDimension(context: "variable column count")
             var spacings: [UInt64] = []
@@ -371,37 +396,44 @@ public struct OASISReader: Sendable {
             }
             return .variableColumn(spacings: spacings)
         case 7:
-            let count = try readRepetitionDimension(context: "variable displacement row count")
-            var displacements: [OASISDisplacement] = []
-            displacements.reserveCapacity(try checkedCollectionCount(count - 1, context: "variable displacement row"))
-            for _ in 0..<(count - 1) {
-                displacements.append(try readGDelta())
+            let yDim = try readRepetitionDimension(context: "grid-scaled variable column count")
+            let gridFactor = try readUnsignedInteger()
+            var spacings: [UInt64] = []
+            spacings.reserveCapacity(try checkedCollectionCount(yDim - 1, context: "grid-scaled variable column spacings"))
+            for _ in 0..<(yDim - 1) {
+                let spacing = try readUnsignedInteger()
+                spacings.append(try checkedMultiply(spacing, gridFactor, context: "grid-scaled variable column spacing"))
             }
-            return .variableDisplacementRow(displacements: displacements)
+            return .variableColumn(spacings: spacings)
         case 8:
-            let count = try readRepetitionDimension(context: "variable displacement column count")
-            var displacements: [OASISDisplacement] = []
-            displacements.reserveCapacity(try checkedCollectionCount(count - 1, context: "variable displacement column"))
-            for _ in 0..<(count - 1) {
-                displacements.append(try readGDelta())
-            }
-            return .variableDisplacementColumn(displacements: displacements)
-        case 9:
-            let count = try readRepetitionDimension(context: "repeated displacement row count")
-            let disp = try readGDelta()
-            let displacementCount = try checkedCollectionCount(count - 1, context: "repeated displacement row")
-            return .variableDisplacementRow(displacements: Array(repeating: disp, count: displacementCount))
-        case 10:
-            let count = try readRepetitionDimension(context: "repeated displacement column count")
-            let disp = try readGDelta()
-            let displacementCount = try checkedCollectionCount(count - 1, context: "repeated displacement column")
-            return .variableDisplacementColumn(displacements: Array(repeating: disp, count: displacementCount))
-        case 11:
             let xDim = try readRepetitionDimension(context: "arbitrary grid columns")
             let yDim = try readRepetitionDimension(context: "arbitrary grid rows")
             let colDisp = try readGDelta()
             let rowDisp = try readGDelta()
             return .arbitraryGrid(columns: xDim, rows: yDim, colDisplacement: colDisp, rowDisplacement: rowDisp)
+        case 9:
+            let count = try readRepetitionDimension(context: "repeated displacement count")
+            let disp = try readGDelta()
+            let displacementCount = try checkedCollectionCount(count - 1, context: "repeated displacement")
+            return .variableDisplacementRow(displacements: Array(repeating: disp, count: displacementCount))
+        case 10:
+            let count = try readRepetitionDimension(context: "variable displacement count")
+            var displacements: [OASISDisplacement] = []
+            displacements.reserveCapacity(try checkedCollectionCount(count - 1, context: "variable displacement"))
+            for _ in 0..<(count - 1) {
+                displacements.append(try readGDelta())
+            }
+            return .variableDisplacementRow(displacements: displacements)
+        case 11:
+            let count = try readRepetitionDimension(context: "grid-scaled variable displacement count")
+            let gridFactor = try readUnsignedInteger()
+            var displacements: [OASISDisplacement] = []
+            displacements.reserveCapacity(try checkedCollectionCount(count - 1, context: "grid-scaled variable displacement"))
+            for _ in 0..<(count - 1) {
+                let displacement = try readGDelta()
+                displacements.append(try checkedScale(displacement, by: gridFactor, context: "grid-scaled variable displacement"))
+            }
+            return .variableDisplacementRow(displacements: displacements)
         default:
             throw OASISError.invalidRepetitionType(offset: startOffset, typeCode: typeCode)
         }
@@ -410,18 +442,30 @@ public struct OASISReader: Sendable {
     private mutating func readGDelta() throws -> OASISDisplacement {
         let encoded = try readUnsignedInteger()
         if encoded & 1 == 0 {
-            let dir = (encoded >> 1) & 0x03
-            let mag = try checkedInt64(encoded >> 3, context: "g-delta magnitude")
+            let dir = (encoded >> 1) & 0x07
+            let mag = try checkedInt64(encoded >> 4, context: "g-delta magnitude")
             switch dir {
             case 0: return OASISDisplacement(dx: mag, dy: 0)
             case 1: return OASISDisplacement(dx: 0, dy: mag)
             case 2: return OASISDisplacement(dx: -mag, dy: 0)
             case 3: return OASISDisplacement(dx: 0, dy: -mag)
-            default: return OASISDisplacement(dx: 0, dy: 0)
+            case 4: return OASISDisplacement(dx: mag, dy: mag)
+            case 5: return OASISDisplacement(dx: -mag, dy: mag)
+            case 6: return OASISDisplacement(dx: -mag, dy: -mag)
+            case 7: return OASISDisplacement(dx: mag, dy: -mag)
+            default:
+                throw OASISError.invalidRepetitionType(offset: offset, typeCode: encoded)
             }
         } else {
-            let dx = try readSignedInteger()
-            let dy = try readSignedInteger()
+            let xSignBits = encoded & 0x03
+            guard xSignBits == 1 || xSignBits == 3 else {
+                throw OASISError.invalidRepetitionType(offset: offset, typeCode: encoded)
+            }
+            let xMagnitude = try checkedInt64(encoded >> 2, context: "general g-delta x magnitude")
+            let yEncoded = try readUnsignedInteger()
+            let yMagnitude = try checkedInt64(yEncoded >> 1, context: "general g-delta y magnitude")
+            let dx = xSignBits == 3 ? -xMagnitude : xMagnitude
+            let dy = yEncoded & 1 == 1 ? -yMagnitude : yMagnitude
             return OASISDisplacement(dx: dx, dy: dy)
         }
     }
@@ -453,6 +497,37 @@ public struct OASISReader: Sendable {
             )
         }
         return count
+    }
+
+    private func checkedMultiply(_ lhs: UInt64, _ rhs: UInt64, context: String) throws -> UInt64 {
+        let (result, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        guard !overflow else {
+            throw OASISError.numericOverflow(context: context, value: "\(lhs)*\(rhs)")
+        }
+        return result
+    }
+
+    private func checkedScale(
+        _ displacement: OASISDisplacement,
+        by factor: UInt64,
+        context: String
+    ) throws -> OASISDisplacement {
+        guard factor <= UInt64(Int64.max) else {
+            throw OASISError.numericOverflow(context: context, value: String(factor))
+        }
+        let factor = Int64(factor)
+        return OASISDisplacement(
+            dx: try checkedMultiply(displacement.dx, factor, context: "\(context) dx"),
+            dy: try checkedMultiply(displacement.dy, factor, context: "\(context) dy")
+        )
+    }
+
+    private func checkedMultiply(_ lhs: Int64, _ rhs: Int64, context: String) throws -> Int64 {
+        let (result, overflow) = lhs.multipliedReportingOverflow(by: rhs)
+        guard !overflow else {
+            throw OASISError.numericOverflow(context: context, value: "\(lhs)*\(rhs)")
+        }
+        return result
     }
 
     private func checkedInt64(_ value: UInt64, context: String) throws -> Int64 {

@@ -105,7 +105,11 @@ public enum OASISLibraryReader {
             case .cblock:
                 try reader.handleCBlock()
             default:
-                continue
+                throw OASISError.unexpectedRecord(
+                    got: recordByte,
+                    expected: "supported library record",
+                    offset: reader.currentOffset - 1
+                )
             }
         }
 
@@ -128,7 +132,7 @@ public enum OASISLibraryReader {
         while reader.hasMore {
             let nextByte = try reader.peekByte()
             guard let nextType = OASISRecordType(rawValue: nextByte) else {
-                break
+                throw OASISError.unknownRecordType(offset: reader.currentOffset, rawValue: nextByte)
             }
 
             switch nextType {
@@ -242,7 +246,11 @@ public enum OASISLibraryReader {
             case .pad:
                 _ = try reader.readByte()
             default:
-                _ = try reader.readByte()
+                throw OASISError.unexpectedRecord(
+                    got: nextByte,
+                    expected: "supported cell content",
+                    offset: reader.currentOffset
+                )
             }
         }
 
@@ -950,8 +958,12 @@ public enum OASISLibraryReader {
         let nextByte = try reader.peekByte()
         // Type 0 = reuse previous repetition
         if nextByte == 0 {
+            let offset = reader.currentOffset
             _ = try reader.readByte() // consume the type-0 byte
-            return modal.lastRepetition ?? .uniformRow(count: 2, spacing: 0)
+            guard let lastRepetition = modal.lastRepetition else {
+                throw OASISError.invalidRepetitionType(offset: offset, typeCode: 0)
+            }
+            return lastRepetition
         }
         return try reader.readRepetition()
     }
@@ -995,16 +1007,12 @@ public enum OASISLibraryReader {
         fallbackPrefix: String,
         context: String
     ) throws -> String {
-        guard refNum <= UInt64(Int.max) else {
-            if fallbackPrefix.isEmpty { return "" }
-            return "\(fallbackPrefix)\(refNum)"
+        _ = fallbackPrefix
+        let index = try checkedTableIndex(refNum, context: context)
+        guard index < table.count, !table[index].isEmpty else {
+            throw OASISError.unresolvedReference(context: context, refNum: refNum)
         }
-        let index = Int(refNum)
-        if index < table.count {
-            return table[index]
-        }
-        if fallbackPrefix.isEmpty { return "" }
-        return "\(fallbackPrefix)\(refNum)"
+        return table[index]
     }
 
     private static func checkedInt16(_ value: UInt64, context: String) throws -> Int16 {

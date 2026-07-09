@@ -18,7 +18,13 @@ public struct DEFDieArea: Hashable, Sendable, Codable {
         guard !points.isEmpty else { return nil }
         let xs = points.map(\.x)
         let ys = points.map(\.y)
-        return (xs.min()!, ys.min()!, xs.max()!, ys.max()!)
+        guard let minX = xs.min(),
+              let minY = ys.min(),
+              let maxX = xs.max(),
+              let maxY = ys.max() else {
+            return nil
+        }
+        return (minX, minY, maxX, maxY)
     }
 
     /// Whether this is a simple rectangular die area (exactly 2 points).
