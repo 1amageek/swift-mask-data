@@ -86,7 +86,7 @@ struct DEFDocumentCodableTests {
             name: "VSS",
             use: .ground,
             routing: [DEFRouteSegment(layerName: "metal1", width: 200, points: [
-                IRPoint(x: 0, y: 0), IRPoint(x: 1000, y: 0),
+                DEFRoutePoint(x: 0, y: 0), DEFRoutePoint(x: 1000, y: 0),
             ])]
         )
         let data = try JSONEncoder().encode(original)

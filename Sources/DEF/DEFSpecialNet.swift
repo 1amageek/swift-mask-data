@@ -72,14 +72,6 @@ public struct DEFRouteSegment: Hashable, Sendable, Codable {
         self.shape = shape
     }
 
-    /// Convenience init for backward compatibility with simple IRPoint arrays.
-    public init(layerName: String, width: Int32 = 0, points: [IRPoint]) {
-        self.status = .routed
-        self.layerName = layerName
-        self.width = width
-        self.points = points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
-        self.shape = nil
-    }
 }
 
 /// A point in a special net route, supporting wildcard (*) coordinates and via references.

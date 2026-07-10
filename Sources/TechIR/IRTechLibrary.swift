@@ -65,8 +65,8 @@ public struct IRTechLibrary: Hashable, Sendable, Codable {
         self.sites = try container.decode([IRTechSiteDef].self, forKey: .sites)
         self.designRules = try container.decode([IRTechDesignRule].self, forKey: .designRules)
         self.enclosureRules = try container.decode([IRTechEnclosureRule].self, forKey: .enclosureRules)
-        self.extensionRules = try container.decodeIfPresent([IRTechExtensionRule].self, forKey: .extensionRules) ?? []
-        self.minimumCutRules = try container.decodeIfPresent([IRTechMinimumCutRule].self, forKey: .minimumCutRules) ?? []
+        self.extensionRules = try container.decode([IRTechExtensionRule].self, forKey: .extensionRules)
+        self.minimumCutRules = try container.decode([IRTechMinimumCutRule].self, forKey: .minimumCutRules)
         self.antennaRules = try container.decode([IRTechAntennaRule].self, forKey: .antennaRules)
         self.metadata = try container.decode([String: String].self, forKey: .metadata)
     }

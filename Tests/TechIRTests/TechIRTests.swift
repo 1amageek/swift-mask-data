@@ -109,13 +109,12 @@ struct IRTechLibraryTests {
         }
     }
 
-    @Test func decodingAllowsLegacyMissingExtensionAndMinimumCutRules() throws {
-        let data = Data(#"{"name":"legacy","dbuPerMicron":1000,"layers":[],"vias":[],"sites":[],"designRules":[],"enclosureRules":[],"antennaRules":[],"metadata":{}}"#.utf8)
+    @Test func decodingRejectsMissingExtensionAndMinimumCutRules() {
+        let data = Data(#"{"name":"incomplete","dbuPerMicron":1000,"layers":[],"vias":[],"sites":[],"designRules":[],"enclosureRules":[],"antennaRules":[],"metadata":{}}"#.utf8)
 
-        let decoded = try JSONDecoder().decode(IRTechLibrary.self, from: data)
-
-        #expect(decoded.extensionRules.isEmpty)
-        #expect(decoded.minimumCutRules.isEmpty)
+        #expect(throws: DecodingError.self) {
+            _ = try JSONDecoder().decode(IRTechLibrary.self, from: data)
+        }
     }
 
     @Test func hashableConformance() {
