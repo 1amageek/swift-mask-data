@@ -4,6 +4,7 @@ public enum OASISError: Error, Sendable {
     case unknownRecordType(offset: Int, rawValue: UInt8)
     case unknownRealType(offset: Int, typeCode: UInt64)
     case invalidRealValue(offset: Int, typeCode: UInt64, reason: String)
+    case invalidUnits(offset: Int, reason: String)
     case invalidString(offset: Int)
     case unexpectedRecord(got: UInt8, expected: String, offset: Int)
     case invalidPointListType(offset: Int, typeCode: UInt64)

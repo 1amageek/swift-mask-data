@@ -63,6 +63,25 @@ public struct Region: Hashable, Sendable {
         RegionBoolean.perform(.not, self, other)
     }
 
+    /// Performs a boolean operation using only the exact rectilinear kernel.
+    /// Unlike the legacy methods above, this API never falls back to the
+    /// approximate non-Manhattan edge processor.
+    public func andChecked(_ other: Region) throws -> Region {
+        try RegionBoolean.checkedPerform(.and, self, other)
+    }
+
+    public func orChecked(_ other: Region) throws -> Region {
+        try RegionBoolean.checkedPerform(.or, self, other)
+    }
+
+    public func xorChecked(_ other: Region) throws -> Region {
+        try RegionBoolean.checkedPerform(.xor, self, other)
+    }
+
+    public func notChecked(_ other: Region) throws -> Region {
+        try RegionBoolean.checkedPerform(.not, self, other)
+    }
+
     // MARK: - Sizing
 
     public func sized(by amount: Int32) -> Region {

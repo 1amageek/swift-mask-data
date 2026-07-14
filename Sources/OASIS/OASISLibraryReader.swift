@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Converts OASIS binary data to an IRLibrary.
@@ -17,9 +18,15 @@ public enum OASISLibraryReader {
         }
         let version = try reader.readAString()
         _ = version // "1.0"
+        let unitOffset = reader.currentOffset
         let unitReal = try reader.readReal()
-        let dbuPerMicron = 1.0 / unitReal
-        let units = IRUnits(dbuPerMicron: dbuPerMicron)
+        let scale: DatabaseUnitScale
+        do {
+            scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 1.0 / unitReal)
+        } catch let error as DatabaseUnitScaleError {
+            throw OASISError.invalidUnits(offset: unitOffset, reason: error.localizedDescription)
+        }
+        let units = IRUnits(scale: scale)
         let offsetFlag = try reader.readUnsignedInteger()
         if offsetFlag != 0 {
             // Offset tables present: 6 tables x 2 values (type + offset) = 12 values

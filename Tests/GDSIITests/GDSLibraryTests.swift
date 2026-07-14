@@ -364,6 +364,26 @@ struct GDSLibraryReaderTests {
         #expect(abs(result.units.dbuPerMicron - 500.0) < 1e-6)
     }
 
+    @Test func readUnitsRejectsInvalidScaleInsteadOfUsingDefault() throws {
+        var writer = GDSRecordWriter()
+        try writer.writeInt16(.header, values: [600])
+        try writer.writeInt16(.bgnlib, values: Array(repeating: 0, count: 12))
+        try writer.writeString(.libname, value: "INVALID_UNITS")
+        try writer.writeReal8(.units, values: [0, 0])
+        try writer.writeNoData(.endlib)
+
+        do {
+            _ = try GDSLibraryReader.read(writer.data)
+            Issue.record("Expected invalid UNITS to throw")
+        } catch let error as GDSError {
+            guard case .invalidUnits(_, let context) = error else {
+                Issue.record("Expected GDSError.invalidUnits, got \(error)")
+                return
+            }
+            #expect(context.contains("positive"))
+        }
+    }
+
     @Test func readWritePreservesGDSTimestamps() throws {
         let libraryCreatedAt = IRDateTime(year: 2024, month: 2, day: 3, hour: 4, minute: 5, second: 6)
         let libraryModifiedAt = IRDateTime(year: 2025, month: 7, day: 8, hour: 9, minute: 10, second: 11)

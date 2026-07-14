@@ -1,6 +1,8 @@
 import Testing
 import Foundation
+import CircuiteFoundation
 import LayoutIR
+import GDSII
 @testable import OASIS
 
 // MARK: - Step 8: OASISLibraryWriter
@@ -135,6 +137,43 @@ struct OASISLibraryReaderTests {
         #expect(result.cells.count == 1)
         #expect(result.cells[0].name == "TOP")
         #expect(result.cells[0].elements.isEmpty)
+    }
+
+    @Test func readRejectsInvalidUnitScale() throws {
+        var writer = OASISWriter()
+        writer.writeMagic()
+        writer.writeByte(OASISRecordType.start.rawValue)
+        try writer.writeAString("1.0")
+        writer.writeReal(0)
+        writer.writeUnsignedInteger(0)
+        writer.writeByte(OASISRecordType.end.rawValue)
+        try writer.writeAString("")
+        writer.writeUnsignedInteger(0)
+
+        do {
+            _ = try OASISLibraryReader.read(writer.data)
+            Issue.record("Expected invalid OASIS unit scale to throw")
+        } catch let error as OASISError {
+            guard case .invalidUnits(_, let reason) = error else {
+                Issue.record("Expected OASISError.invalidUnits, got \(error)")
+                return
+            }
+            #expect(reason.contains("greater than zero"))
+        }
+    }
+
+    @Test func writersRejectInvalidUnitScale() throws {
+        let library = IRLibrary(
+            name: "INVALID_UNITS",
+            units: IRUnits(dbuPerMicron: 0),
+            cells: []
+        )
+        #expect(throws: DatabaseUnitScaleError.self) {
+            _ = try OASISLibraryWriter.write(library)
+        }
+        #expect(throws: DatabaseUnitScaleError.self) {
+            _ = try GDSLibraryWriter.write(library)
+        }
     }
 
     @Test func readBoundaryRoundTrip() throws {

@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Converts an IRLibrary to OASIS binary data.
@@ -6,12 +7,13 @@ public enum OASISLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
         var w = OASISWriter()
+        let scale = try library.units.validatedScale
 
         // Magic
         w.writeMagic()
 
         // START record (record type 1)
-        try writeStartRecord(&w, library: library)
+        try writeStartRecord(&w, library: library, scale: scale)
 
         // CELLNAME records (name table)
         var cellNameTable: [String: UInt64] = [:]
@@ -35,12 +37,16 @@ public enum OASISLibraryWriter {
 
     // MARK: - START
 
-    private static func writeStartRecord(_ w: inout OASISWriter, library: IRLibrary) throws {
+    private static func writeStartRecord(
+        _ w: inout OASISWriter,
+        library: IRLibrary,
+        scale: DatabaseUnitScale
+    ) throws {
         w.writeByte(OASISRecordType.start.rawValue)
         try w.writeAString("1.0") // version
         // unit: dbuPerMicron as real (1 micron = dbuPerMicron database units)
         // OASIS unit is the database unit size in microns = 1/dbuPerMicron
-        let unitInMicrons = 1.0 / library.units.dbuPerMicron
+        let unitInMicrons = 1.0 / scale.databaseUnitsPerMicrometer
         w.writeReal(unitInMicrons)
         // offset-flag: 0 = no offset tables
         w.writeUnsignedInteger(0)

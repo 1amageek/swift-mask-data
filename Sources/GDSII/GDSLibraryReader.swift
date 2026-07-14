@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Converts GDSII binary data to an IRLibrary.
@@ -35,24 +36,39 @@ public enum GDSLibraryReader {
         }
 
         // UNITS
+        let unitsOffset = r.currentOffset
         let unitsRec = try r.readRecord()
         guard unitsRec.recordType == .units else {
             throw GDSError.missingRequiredRecord(.units, context: "after LIBNAME")
         }
-        let units: IRUnits
-        if case .real8(let values) = unitsRec.payload, values.count >= 2 {
-            let userUnitsPerDBU = values[0]
-            let metersPerDBU = values[1]
-            if userUnitsPerDBU > 0 {
-                units = IRUnits(dbuPerMicron: 1.0 / userUnitsPerDBU)
-            } else if metersPerDBU > 0 {
-                units = IRUnits(dbuPerMicron: 1e-6 / metersPerDBU)
-            } else {
-                units = .default
-            }
-        } else {
-            units = .default
+        guard case .real8(let values) = unitsRec.payload, values.count >= 2 else {
+            throw GDSError.invalidUnits(
+                offset: unitsOffset,
+                context: "UNITS must contain user-units-per-DBU and meters-per-DBU"
+            )
         }
+
+        let userUnitsPerDBU = values[0]
+        let metersPerDBU = values[1]
+        let dbuPerMicron: Double
+        if userUnitsPerDBU.isFinite, userUnitsPerDBU > 0 {
+            dbuPerMicron = 1.0 / userUnitsPerDBU
+        } else if metersPerDBU.isFinite, metersPerDBU > 0 {
+            dbuPerMicron = 1e-6 / metersPerDBU
+        } else {
+            throw GDSError.invalidUnits(
+                offset: unitsOffset,
+                context: "UNITS values must define a finite positive database-unit scale"
+            )
+        }
+
+        let scale: DatabaseUnitScale
+        do {
+            scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: dbuPerMicron)
+        } catch let error as DatabaseUnitScaleError {
+            throw GDSError.invalidUnits(offset: unitsOffset, context: error.localizedDescription)
+        }
+        let units = IRUnits(scale: scale)
 
         // Read structures until ENDLIB
         var cells: [IRCell] = []

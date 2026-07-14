@@ -6,6 +6,7 @@ public enum GDSLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
         var w = GDSRecordWriter()
+        let scale = try library.units.validatedScale
 
         // HEADER
         try w.checkedWriteInt16(.header, values: [600])
@@ -20,8 +21,8 @@ public enum GDSLibraryWriter {
 
         // UNITS: userUnitsPerDBU, metersPerDBU
         try w.checkedWriteReal8(.units, values: [
-            library.units.userUnitsPerDBU,
-            library.units.metersPerDBU,
+            1.0 / scale.databaseUnitsPerMicrometer,
+            1e-6 / scale.databaseUnitsPerMicrometer,
         ])
 
         // Structures (cells)

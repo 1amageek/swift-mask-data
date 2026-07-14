@@ -13,14 +13,23 @@ enum RegionBoolean {
     }
 
     static func checkedPerform(_ op: BooleanOperation, _ a: Region, _ b: Region) throws -> Region {
-        let allManhattan = a.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
-                        && b.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
-
-        if allManhattan {
-            return try performManhattan(op, a, b)
-        } else {
-            return performGeneral(op, a, b)
+        for (index, polygon) in a.polygons.enumerated() {
+            guard PolygonGeometry.isManhattan(polygon.points) else {
+                throw RegionBooleanError.unsupportedNonManhattanGeometry(
+                    operand: "left",
+                    polygonIndex: index
+                )
+            }
         }
+        for (index, polygon) in b.polygons.enumerated() {
+            guard PolygonGeometry.isManhattan(polygon.points) else {
+                throw RegionBooleanError.unsupportedNonManhattanGeometry(
+                    operand: "right",
+                    polygonIndex: index
+                )
+            }
+        }
+        return try performManhattan(op, a, b)
     }
 
     // MARK: - Manhattan Path (scanline decomposition)
