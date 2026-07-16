@@ -47,49 +47,30 @@ public struct Region: Hashable, Sendable {
 
     // MARK: - Boolean Operations
 
-    public func and(_ other: Region) -> Region {
-        RegionBoolean.perform(.and, self, other)
+    public func intersection(_ other: Region) throws -> Region {
+        try RegionBoolean.perform(.intersection, self, other)
     }
 
-    public func or(_ other: Region) -> Region {
-        RegionBoolean.perform(.or, self, other)
+    public func union(_ other: Region) throws -> Region {
+        try RegionBoolean.perform(.union, self, other)
     }
 
-    public func xor(_ other: Region) -> Region {
-        RegionBoolean.perform(.xor, self, other)
+    public func symmetricDifference(_ other: Region) throws -> Region {
+        try RegionBoolean.perform(.symmetricDifference, self, other)
     }
 
-    public func not(_ other: Region) -> Region {
-        RegionBoolean.perform(.not, self, other)
-    }
-
-    /// Performs a boolean operation using only the exact rectilinear kernel.
-    /// Unlike the legacy methods above, this API never falls back to the
-    /// approximate non-Manhattan edge processor.
-    public func andChecked(_ other: Region) throws -> Region {
-        try RegionBoolean.checkedPerform(.and, self, other)
-    }
-
-    public func orChecked(_ other: Region) throws -> Region {
-        try RegionBoolean.checkedPerform(.or, self, other)
-    }
-
-    public func xorChecked(_ other: Region) throws -> Region {
-        try RegionBoolean.checkedPerform(.xor, self, other)
-    }
-
-    public func notChecked(_ other: Region) throws -> Region {
-        try RegionBoolean.checkedPerform(.not, self, other)
+    public func subtracting(_ other: Region) throws -> Region {
+        try RegionBoolean.perform(.subtraction, self, other)
     }
 
     // MARK: - Sizing
 
-    public func sized(by amount: Int32) -> Region {
-        RegionSizing.size(self, by: amount)
+    public func sized(by amount: Int32) throws -> Region {
+        try RegionSizing.size(self, by: amount)
     }
 
-    public func sized(by amount: Int32, cornerMode: CornerMode) -> Region {
-        RegionSizing.size(self, by: amount, cornerMode: cornerMode)
+    public func sized(by amount: Int32, cornerMode: CornerMode) throws -> Region {
+        try RegionSizing.size(self, by: amount, cornerMode: cornerMode)
     }
 
     // MARK: - Connectivity
@@ -101,8 +82,8 @@ public struct Region: Hashable, Sendable {
     }
 
     /// Enclosed holes of the region, returned as filled regions.
-    public func holes() -> [Region] {
-        RegionConnectivity.holes(of: self)
+    public func holes() throws -> [Region] {
+        try RegionConnectivity.holes(of: self)
     }
 
     /// Boundary-inclusive point containment test.
@@ -112,39 +93,39 @@ public struct Region: Hashable, Sendable {
 
     // MARK: - DRC
 
-    public func widthViolations(minWidth: Int32) -> [IREdgePair] {
-        DRCCheck.widthCheck(self, minWidth: minWidth)
+    public func widthViolations(minWidth: Int32) throws -> [IREdgePair] {
+        try DRCCheck.widthCheck(self, minWidth: minWidth)
     }
 
-    public func widthViolations(minWidth: Int32, metric: DRCMetric) -> [IREdgePair] {
-        DRCCheck.widthCheck(self, minWidth: minWidth, metric: metric)
+    public func widthViolations(minWidth: Int32, metric: DRCMetric) throws -> [IREdgePair] {
+        try DRCCheck.widthCheck(self, minWidth: minWidth, metric: metric)
     }
 
-    public func spaceViolations(to other: Region, minSpace: Int32) -> [IREdgePair] {
-        DRCCheck.spaceCheck(self, other, minSpace: minSpace)
+    public func spaceViolations(to other: Region, minSpace: Int32) throws -> [IREdgePair] {
+        try DRCCheck.spaceCheck(self, other, minSpace: minSpace)
     }
 
-    public func spaceViolations(to other: Region, minSpace: Int32, metric: DRCMetric) -> [IREdgePair] {
-        DRCCheck.spaceCheck(self, other, minSpace: minSpace, metric: metric)
+    public func spaceViolations(to other: Region, minSpace: Int32, metric: DRCMetric) throws -> [IREdgePair] {
+        try DRCCheck.spaceCheck(self, other, minSpace: minSpace, metric: metric)
     }
 
     /// Net-blind self-spacing: merges the region first so touching or
     /// overlapping polygons never flag, then reports exterior gaps narrower
     /// than `minSpace` (including notches and diagonal corner gaps).
-    public func selfSpaceViolations(minSpace: Int32) -> [IREdgePair] {
-        DRCCheck.selfSpaceCheck(self, minSpace: minSpace)
+    public func selfSpaceViolations(minSpace: Int32) throws -> [IREdgePair] {
+        try DRCCheck.selfSpaceCheck(self, minSpace: minSpace)
     }
 
-    public func selfSpaceViolations(minSpace: Int32, metric: DRCMetric) -> [IREdgePair] {
-        DRCCheck.selfSpaceCheck(self, minSpace: minSpace, metric: metric)
+    public func selfSpaceViolations(minSpace: Int32, metric: DRCMetric) throws -> [IREdgePair] {
+        try DRCCheck.selfSpaceCheck(self, minSpace: minSpace, metric: metric)
     }
 
-    public func enclosureViolations(inner: Region, minEnclosure: Int32) -> [IREdgePair] {
-        DRCCheck.enclosureCheck(outer: self, inner: inner, minEnclosure: minEnclosure)
+    public func enclosureViolations(inner: Region, minEnclosure: Int32) throws -> [IREdgePair] {
+        try DRCCheck.enclosureCheck(outer: self, inner: inner, minEnclosure: minEnclosure)
     }
 
-    public func enclosureViolations(inner: Region, minEnclosure: Int32, metric: DRCMetric) -> [IREdgePair] {
-        DRCCheck.enclosureCheck(outer: self, inner: inner, minEnclosure: minEnclosure, metric: metric)
+    public func enclosureViolations(inner: Region, minEnclosure: Int32, metric: DRCMetric) throws -> [IREdgePair] {
+        try DRCCheck.enclosureCheck(outer: self, inner: inner, minEnclosure: minEnclosure, metric: metric)
     }
 
     public func notchViolations(minNotch: Int32, metric: DRCMetric = .euclidean) -> [IREdgePair] {

@@ -40,13 +40,13 @@ struct CIFLibraryReaderTests {
 
     @Test func emptyFile() throws {
         let data = Data("E".utf8)
-        let lib = try CIFLibraryReader.read(data)
+        let lib = try CIFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.isEmpty)
     }
 
     @Test func singleBox() throws {
         let cif = "DS 1 1; L 1; B 100 50 50 25; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         #expect(lib.cells[0].name == "CELL_1")
         #expect(lib.cells[0].elements.count == 1)
@@ -63,7 +63,7 @@ struct CIFLibraryReaderTests {
 
     @Test func wire() throws {
         let cif = "DS 1 1; L 2; W 10 0 0 100 0; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells[0].elements.count == 1)
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.layer == 2)
@@ -78,7 +78,7 @@ struct CIFLibraryReaderTests {
 
     @Test func polygonAutoClose() throws {
         let cif = "DS 1 1; L 3; P 0 0 100 0 100 100; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 4) // 3 points + auto-close
             #expect(b.points[0] == b.points[3]) // closed
@@ -89,7 +89,7 @@ struct CIFLibraryReaderTests {
 
     @Test func cellReference() throws {
         let cif = "DS 2 1; L 1; B 100 100 50 50; DF; DS 1 1; C 2 T 100 200; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 2)
         let parentCell = lib.cells[1]
         if case .cellRef(let ref) = parentCell.elements[0] {
@@ -102,7 +102,7 @@ struct CIFLibraryReaderTests {
 
     @Test func multipleLayerSwitch() throws {
         let cif = "DS 1 1; L 1; B 100 100 50 50; L 2; B 200 200 100 100; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells[0].elements.count == 2)
         if case .boundary(let b1) = lib.cells[0].elements[0] {
             #expect(b1.layer == 1)
@@ -119,7 +119,7 @@ struct CIFLibraryReaderTests {
     @Test func scaleFactorConversion() throws {
         // DS 1 2 → scale = 1/2 = 0.5
         let cif = "DS 1 2; L 1; B 200 100 100 50; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             // B 200 100 100 50 with scale 0.5
             // length=100, width=50, cx=50, cy=25
@@ -132,7 +132,7 @@ struct CIFLibraryReaderTests {
 
     @Test func mirrorTransform() throws {
         let cif = "DS 2 1; L 1; B 100 100 50 50; DF; DS 1 1; C 2 M Y; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let parent = lib.cells[1]
         if case .cellRef(let ref) = parent.elements[0] {
             #expect(ref.transform.mirrorX == true)
@@ -143,7 +143,7 @@ struct CIFLibraryReaderTests {
 
     @Test func rotationTransform() throws {
         let cif = "DS 2 1; L 1; B 100 100 50 50; DF; DS 1 1; C 2 R 0 1; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let parent = lib.cells[1]
         if case .cellRef(let ref) = parent.elements[0] {
             // R 0 1 → atan2(1, 0) = 90 degrees
@@ -168,7 +168,7 @@ struct CIFLibraryReaderTests {
         DF;
         E
         """
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         let cell = lib.cells[0]
         // 3 boundaries + 2 paths + 2 texts = 7 elements
@@ -190,7 +190,7 @@ struct CIFLibraryReaderTests {
 
     @Test func namedLayerMapping() throws {
         let cif = "DS 1 1; L METAL1; B 100 100 50 50; L POLY; B 50 50 25 25; L METAL1; B 80 80 40 40; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let elements = lib.cells[0].elements
         // METAL1 gets layer 1, POLY gets layer 2, second METAL1 reuses layer 1
         if case .boundary(let b1) = elements[0],

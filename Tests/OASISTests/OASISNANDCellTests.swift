@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -10,7 +11,7 @@ import LayoutIR
 struct OASISNANDCellTests {
 
     /// Reuse the same NAND2 library as GDSIITests.
-    static func buildNAND2Library() -> IRLibrary {
+    static func buildNAND2Library() throws -> IRLibrary {
         let diffLayer: Int16 = 1
         let polyLayer: Int16 = 2
         let metal1Layer: Int16 = 3
@@ -89,11 +90,11 @@ struct OASISNANDCellTests {
                                      position: IRPoint(x: 1000, y: 2800), string: "VDD", properties: [])))
 
         let nandCell = IRCell(name: "NAND2", elements: elements)
-        return IRLibrary(name: "NANDLIB", units: IRUnits(dbuPerMicron: 1000), cells: [nandCell])
+        return IRLibrary(name: "NANDLIB", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000), cells: [nandCell])
     }
 
     @Test func nandCellOASISRoundTrip() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         let data = try OASISLibraryWriter.write(original)
         #expect(data.count > 0)
@@ -124,7 +125,7 @@ struct OASISNANDCellTests {
     }
 
     @Test func nandCellPointsPreserved() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
         let data = try OASISLibraryWriter.write(original)
         let result = try OASISLibraryReader.read(data)
 
@@ -144,7 +145,7 @@ struct OASISNANDCellTests {
     }
 
     @Test func nandCellTextPreserved() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
         let data = try OASISLibraryWriter.write(original)
         let result = try OASISLibraryReader.read(data)
 
@@ -161,7 +162,7 @@ struct OASISNANDCellTests {
     }
 
     @Test func nandCellDoubleRoundTrip() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         let data1 = try OASISLibraryWriter.write(original)
         let result1 = try OASISLibraryReader.read(data1)
@@ -178,7 +179,7 @@ struct OASISNANDCellTests {
     }
 
     @Test func nandCellWithHierarchy() throws {
-        let nandLib = OASISNANDCellTests.buildNAND2Library()
+        let nandLib = try OASISNANDCellTests.buildNAND2Library()
         let nandCell = nandLib.cells[0]
 
         let topCell = IRCell(name: "TOP", elements: [
@@ -198,7 +199,7 @@ struct OASISNANDCellTests {
 
         let lib = IRLibrary(
             name: "NANDTOP",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [nandCell, topCell]
         )
 
@@ -226,7 +227,7 @@ struct OASISNANDCellTests {
 struct CrossFormatTests {
 
     @Test func gdsiiToOASISRoundTrip() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         // GDSII → IR
         let gdsData = try GDSLibraryWriter.write(original)
@@ -243,7 +244,7 @@ struct CrossFormatTests {
     }
 
     @Test func oasisToGDSIIRoundTrip() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         // OASIS → IR
         let oasisData = try OASISLibraryWriter.write(original)
@@ -260,7 +261,7 @@ struct CrossFormatTests {
     }
 
     @Test func crossFormatElementTypesPreserved() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         // GDSII path
         let gdsData = try GDSLibraryWriter.write(original)
@@ -293,7 +294,7 @@ struct CrossFormatTests {
     }
 
     @Test func crossFormatCoordinatesMatch() throws {
-        let original = OASISNANDCellTests.buildNAND2Library()
+        let original = try OASISNANDCellTests.buildNAND2Library()
 
         let gdsData = try GDSLibraryWriter.write(original)
         let gdsLib = try GDSLibraryReader.read(gdsData)

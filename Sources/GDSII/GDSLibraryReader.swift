@@ -68,8 +68,6 @@ public enum GDSLibraryReader {
         } catch let error as DatabaseUnitScaleError {
             throw GDSError.invalidUnits(offset: unitsOffset, context: error.localizedDescription)
         }
-        let units = IRUnits(scale: scale)
-
         // Read structures until ENDLIB
         var cells: [IRCell] = []
         var foundEndlib = false
@@ -98,7 +96,7 @@ public enum GDSLibraryReader {
 
         return IRLibrary(
             name: libName,
-            units: units,
+            databaseUnitScale: scale,
             cells: cells,
             createdAt: libraryTimestamps.createdAt,
             modifiedAt: libraryTimestamps.modifiedAt

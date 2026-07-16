@@ -72,7 +72,7 @@ enum RegionConnectivity {
     /// Returns the enclosed holes of the region as filled regions.
     /// A hole is a connected component of the complement that does not reach
     /// the exterior frame surrounding the region's bounding box.
-    static func holes(of region: Region) -> [Region] {
+    static func holes(of region: Region) throws -> [Region] {
         guard let bb = region.boundingBox else { return [] }
         let frame = Region(layer: region.layer, polygons: [rectangleBoundary(
             xMin: bb.minX - 1,
@@ -81,7 +81,7 @@ enum RegionConnectivity {
             yMax: bb.maxY + 1,
             layer: region.layer
         )])
-        let complement = frame.not(region)
+        let complement = try frame.subtracting(region)
         return connectedComponents(of: complement).filter { component in
             guard let cb = component.boundingBox else { return false }
             return cb.minX > bb.minX - 1 && cb.minY > bb.minY - 1

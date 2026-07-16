@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -241,7 +242,7 @@ struct LEFRoundTripTests {
 @Suite("LEFIRConverter")
 struct LEFIRConverterTests {
 
-    @Test func lefToIR() {
+    @Test func lefToIR() throws {
         let doc = LEFDocument(
             version: "5.8",
             dbuPerMicron: 1000,
@@ -256,17 +257,17 @@ struct LEFIRConverterTests {
                 ])
             ]
         )
-        let lib = LEFIRConverter.toIRLibrary(doc)
+        let lib = try LEFIRConverter.toIRLibrary(doc)
         #expect(lib.cells.count == 1)
         #expect(lib.cells[0].name == "INV")
         // 1 boundary + 1 text label for pin A
         #expect(lib.cells[0].elements.count == 2)
     }
 
-    @Test func irToLEF() {
+    @Test func irToLEF() throws {
         let lib = IRLibrary(
             name: "TEST",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [
                 IRCell(name: "BUF", elements: [
                     .boundary(IRBoundary(layer: 1, datatype: 0, points: [

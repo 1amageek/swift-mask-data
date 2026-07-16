@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -10,7 +11,7 @@ struct DXFArcTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nARC\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n10.0\n 50\n0.0\n 51\n180.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count == 65) // 64 segments + 1
@@ -28,7 +29,7 @@ struct DXFArcTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nARC\n  8\n1\n 10\n5.0\n 20\n5.0\n 40\n5.0\n 50\n0.0\n 51\n90.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             // Start at angle 0: (10000, 5000)
             #expect(p.points[0] == IRPoint(x: 10000, y: 5000))
@@ -45,7 +46,7 @@ struct DXFArcTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nARC\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n0.0\n 50\n0.0\n 51\n90.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.isEmpty)
     }
 }
@@ -58,7 +59,7 @@ struct DXFEllipseTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nELLIPSE\n  8\n1\n 10\n0.0\n 20\n0.0\n 11\n10.0\n 21\n0.0\n 40\n0.5\n 41\n0.0\n 42\n6.283185\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 65) // closed polygon
             // Major axis extends to ±10 in X
@@ -78,7 +79,7 @@ struct DXFEllipseTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nELLIPSE\n  8\n1\n 10\n0.0\n 20\n0.0\n 11\n10.0\n 21\n0.0\n 40\n0.5\n 41\n0.0\n 42\n3.14159\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count >= 2)
         } else {
@@ -94,7 +95,7 @@ struct DXFPolylineTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nPOLYLINE\n  8\n1\n 70\n0\n  0\nVERTEX\n 10\n0.0\n 20\n0.0\n  0\nVERTEX\n 10\n10.0\n 20\n0.0\n  0\nVERTEX\n 10\n10.0\n 20\n10.0\n  0\nSEQEND\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count == 3)
@@ -110,7 +111,7 @@ struct DXFPolylineTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nPOLYLINE\n  8\n1\n 70\n1\n  0\nVERTEX\n 10\n0.0\n 20\n0.0\n  0\nVERTEX\n 10\n10.0\n 20\n0.0\n  0\nVERTEX\n 10\n10.0\n 20\n10.0\n  0\nSEQEND\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 4) // 3 vertices + close
             #expect(b.points.first == b.points.last)
@@ -124,7 +125,7 @@ struct DXFPolylineTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nPOLYLINE\n  8\n1\n 70\n0\n  0\nVERTEX\n 10\n0.0\n 20\n0.0\n 42\n1.0\n  0\nVERTEX\n 10\n10.0\n 20\n0.0\n  0\nSEQEND\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             // Should have the start, arc intermediate points, and end
             #expect(p.points.count > 2)
@@ -143,7 +144,7 @@ struct DXFLWPolylineBulgeTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nLWPOLYLINE\n  8\n1\n 70\n0\n 10\n0.0\n 20\n0.0\n 42\n1.0\n 10\n10.0\n 20\n0.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count > 2)
             #expect(p.points[0] == IRPoint(x: 0, y: 0))
@@ -161,7 +162,7 @@ struct DXFInsertTransformTests {
         let dxf = """
           0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nBLK1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nBLK1\n 10\n0.0\n 20\n0.0\n 41\n2.0\n 42\n2.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let topCell = lib.cells[0]
         if case .cellRef(let ref) = topCell.elements[0] {
             #expect(ref.cellName == "BLK1")
@@ -175,7 +176,7 @@ struct DXFInsertTransformTests {
         let dxf = """
           0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nBLK1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nBLK1\n 10\n0.0\n 20\n0.0\n 50\n90.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let topCell = lib.cells[0]
         if case .cellRef(let ref) = topCell.elements[0] {
             #expect(abs(ref.transform.angle - 90.0) < 0.01)
@@ -188,7 +189,7 @@ struct DXFInsertTransformTests {
         let dxf = """
           0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nBLK1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nBLK1\n 10\n0.0\n 20\n0.0\n 41\n-1.0\n 42\n1.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let topCell = lib.cells[0]
         if case .cellRef(let ref) = topCell.elements[0] {
             #expect(ref.transform.mirrorX == true)
@@ -201,7 +202,7 @@ struct DXFInsertTransformTests {
         let dxf = """
           0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nBLK1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nBLK1\n 10\n0.0\n 20\n0.0\n 70\n3\n 71\n2\n 44\n10.0\n 45\n20.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let topCell = lib.cells[0]
         if case .arrayRef(let aref) = topCell.elements[0] {
             #expect(aref.cellName == "BLK1")
@@ -221,7 +222,7 @@ struct DXFHatchTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nHATCH\n  8\n1\n 91\n1\n 92\n3\n 72\n0\n 73\n1\n 93\n4\n 10\n0.0\n 20\n0.0\n 10\n10.0\n 20\n0.0\n 10\n10.0\n 20\n10.0\n 10\n0.0\n 20\n10.0\n 75\n0\n 76\n0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         if case .boundary(let b) = lib.cells[0].elements[0] {
             // 4 vertices + close = 5 points
@@ -240,7 +241,7 @@ struct DXFSplineTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nSPLINE\n  8\n1\n 70\n0\n 11\n0.0\n 21\n0.0\n 11\n5.0\n 21\n10.0\n 11\n10.0\n 21\n0.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count == 3)
             #expect(p.points[0] == IRPoint(x: 0, y: 0))
@@ -255,7 +256,7 @@ struct DXFSplineTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nSPLINE\n  8\n1\n 70\n1\n 11\n0.0\n 21\n0.0\n 11\n10.0\n 21\n0.0\n 11\n10.0\n 21\n10.0\n 11\n0.0\n 21\n10.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.first == b.points.last) // closed
         } else {
@@ -271,7 +272,7 @@ struct DXFAttdefTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nATTDEF\n  8\n1\n 10\n5.0\n 20\n10.0\n  2\nREFDES\n  1\nU1\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .text(let t) = lib.cells[0].elements[0] {
             #expect(t.string == "REFDES") // Tag takes priority
             #expect(t.position == IRPoint(x: 5000, y: 10000))
@@ -288,7 +289,7 @@ struct DXFSolidTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nSOLID\n  8\n1\n 10\n0.0\n 20\n0.0\n 11\n10.0\n 21\n0.0\n 12\n0.0\n 22\n10.0\n 13\n10.0\n 23\n10.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 5) // 4 points + close
             #expect(b.points.first == b.points.last)
@@ -302,7 +303,7 @@ struct DXFSolidTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nSOLID\n  8\n1\n 10\n0.0\n 20\n0.0\n 11\n10.0\n 21\n0.0\n 12\n5.0\n 22\n10.0\n 13\n5.0\n 23\n10.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 4) // triangle + close
         } else {
@@ -316,7 +317,7 @@ struct DXFReadOptionsTests {
 
     @Test func customCircleSegments() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nCIRCLE\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n1.0\n  0\nENDSEC\n  0\nEOF\n"
-        let options = DXFLibraryReader.Options(circleSegments: 16)
+        let options = DXFLibraryReader.Options(circleSegments: 16, databaseUnitScale: try testDatabaseUnitScale())
         let lib = try DXFLibraryReader.read(Data(dxf.utf8), options: options)
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 17) // 16 segments + 1
@@ -328,6 +329,7 @@ struct DXFReadOptionsTests {
     @Test func layerMapping() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\nMETAL1\n 10\n0\n 20\n0\n 11\n1\n 21\n0\n  0\nENDSEC\n  0\nEOF\n"
         let options = DXFLibraryReader.Options(
+            databaseUnitScale: try testDatabaseUnitScale(),
             layerMapping: ["METAL1": (layer: 42, datatype: 0)]
         )
         let lib = try DXFLibraryReader.read(Data(dxf.utf8), options: options)
@@ -343,7 +345,7 @@ struct DXFReadOptionsTests {
 struct DXFWriterTests {
 
     @Test func writeEmptyLibrary() throws {
-        let lib = IRLibrary(name: "empty", units: .default, cells: [])
+        let lib = IRLibrary(name: "empty", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [])
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("SECTION"))
@@ -357,7 +359,7 @@ struct DXFWriterTests {
                 IRPoint(x: 10000, y: 5000),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("LINE"))
@@ -375,7 +377,7 @@ struct DXFWriterTests {
                 IRPoint(x: 0, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("LWPOLYLINE"))
@@ -387,7 +389,7 @@ struct DXFWriterTests {
                         position: IRPoint(x: 5000, y: 3000),
                         string: "VDD", properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("TEXT"))
@@ -408,7 +410,7 @@ struct DXFWriterTests {
                 ], properties: []))
             ])
         ]
-        let lib = IRLibrary(name: "test", units: .default, cells: cells)
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: cells)
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("BLOCK"))
@@ -433,7 +435,7 @@ struct DXFWriterTests {
             ]),
             IRCell(name: "CHILD", elements: [])
         ]
-        let lib = IRLibrary(name: "test", units: .default, cells: cells)
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: cells)
         let data = try DXFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("INSERT"))
@@ -446,7 +448,7 @@ struct DXFWriterTests {
                 IRPoint(x: 0, y: 0), IRPoint(x: 1000, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let options = DXFLibraryWriter.Options(layerMapping: [1: "METAL1"])
         let data = try DXFLibraryWriter.write(lib, options: options)
         let text = String(data: data, encoding: .utf8)!
@@ -460,9 +462,9 @@ struct DXFWriterTests {
                 IRPoint(x: 10000, y: 5000),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
-        let result = try DXFLibraryReader.read(data)
+        let result = try DXFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         #expect(result.cells.count == 1)
         if case .path(let p) = result.cells[0].elements[0] {
             #expect(p.points[0] == IRPoint(x: 0, y: 0))
@@ -482,9 +484,9 @@ struct DXFWriterTests {
                 IRPoint(x: 0, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
-        let result = try DXFLibraryReader.read(data)
+        let result = try DXFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = result.cells[0].elements[0] {
             let xs = b.points.map(\.x)
             let ys = b.points.map(\.y)
@@ -503,9 +505,9 @@ struct DXFWriterTests {
                         position: IRPoint(x: 5000, y: 3000),
                         string: "GND", properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try DXFLibraryWriter.write(lib)
-        let result = try DXFLibraryReader.read(data)
+        let result = try DXFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         if case .text(let t) = result.cells[0].elements[0] {
             #expect(t.string == "GND")
             #expect(t.position == IRPoint(x: 5000, y: 3000))

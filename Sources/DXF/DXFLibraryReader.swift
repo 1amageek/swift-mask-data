@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Reads a DXF (Drawing Exchange Format) file and converts it to an IRLibrary.
@@ -8,24 +9,27 @@ public enum DXFLibraryReader {
     public struct Options: Sendable {
         /// Number of line segments used to approximate arcs and circles.
         public var circleSegments: Int
-        /// Units for coordinate conversion.
-        public var units: IRUnits
+        /// Database-unit scale used for coordinate conversion.
+        public var databaseUnitScale: DatabaseUnitScale
         /// Optional layer name → (layer, datatype) mapping.
         public var layerMapping: [String: (layer: Int16, datatype: Int16)]?
 
         public init(
             circleSegments: Int = 64,
-            units: IRUnits = .default,
+            databaseUnitScale: DatabaseUnitScale,
             layerMapping: [String: (layer: Int16, datatype: Int16)]? = nil
         ) {
             self.circleSegments = circleSegments
-            self.units = units
+            self.databaseUnitScale = databaseUnitScale
             self.layerMapping = layerMapping
         }
     }
 
-    public static func read(_ data: Data, units: IRUnits = .default) throws -> IRLibrary {
-        try read(data, options: Options(units: units))
+    public static func read(
+        _ data: Data,
+        databaseUnitScale: DatabaseUnitScale
+    ) throws -> IRLibrary {
+        try read(data, options: Options(databaseUnitScale: databaseUnitScale))
     }
 
     public static func read(_ data: Data, options: Options) throws -> IRLibrary {
@@ -34,7 +38,7 @@ public enum DXFLibraryReader {
         }
 
         let groups = DXFGroupReader.read(text)
-        let dbu = options.units.dbuPerMicron
+        let dbu = options.databaseUnitScale.databaseUnitsPerMicrometer
         let segments = options.circleSegments
 
         var cells: [IRCell] = []
@@ -220,7 +224,11 @@ public enum DXFLibraryReader {
             cells.insert(IRCell(name: "TOP", elements: topElements), at: 0)
         }
 
-        return IRLibrary(name: "DXF", units: options.units, cells: cells)
+        return IRLibrary(
+            name: "DXF",
+            databaseUnitScale: options.databaseUnitScale,
+            cells: cells
+        )
     }
 
     // MARK: - Entity Parsers

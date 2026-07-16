@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 public enum DEFIRConverterError: Error, Equatable, Sendable {
@@ -64,18 +65,12 @@ public enum DEFIRConverter {
     /// Convert a DEFDocument to an IRLibrary.
     /// Components become IRCellRef elements in a top-level cell.
     public static func toIRLibrary(_ doc: DEFDocument) throws -> IRLibrary {
-        try toIRLibraryChecked(doc)
-    }
-
-    /// Convert a DEFDocument to an IRLibrary with typed validation failures.
-    /// Components become IRCellRef elements in a top-level cell.
-    public static func toIRLibraryChecked(_ doc: DEFDocument) throws -> IRLibrary {
-        try toIRLibraryChecked(doc, layerNumbers: try DEFLayerNumberMapping())
+        try toIRLibrary(doc, layerNumbers: try DEFLayerNumberMapping())
     }
 
     /// Convert a DEFDocument to an IRLibrary using an explicit DEF layer-name mapping.
     /// Components become IRCellRef elements in a top-level cell.
-    public static func toIRLibraryChecked(
+    public static func toIRLibrary(
         _ doc: DEFDocument,
         layerNumbers: DEFLayerNumberMapping
     ) throws -> IRLibrary {
@@ -174,16 +169,22 @@ public enum DEFIRConverter {
                 }
             }
             .map { IRCell(name: $0) }
+        let databaseUnitScale = try DatabaseUnitScale(
+            databaseUnitsPerMicrometer: doc.dbuPerMicron
+        )
         return IRLibrary(
             name: doc.designName,
-            units: IRUnits(dbuPerMicron: doc.dbuPerMicron),
+            databaseUnitScale: databaseUnitScale,
             cells: [topCell] + macroCells
         )
     }
 
     /// Convert an IRLibrary to a DEFDocument.
     public static func toDEFDocument(_ library: IRLibrary) -> DEFDocument {
-        var doc = DEFDocument(designName: library.name, dbuPerMicron: library.units.dbuPerMicron)
+        var doc = DEFDocument(
+            designName: library.name,
+            dbuPerMicron: library.databaseUnitScale.databaseUnitsPerMicrometer
+        )
         guard let topCell = library.cells.first else { return doc }
         let hasPinMetadata = propertyValue(topCell.properties, key: pinCountPropertyKey) != nil
 

@@ -14,9 +14,9 @@
 
 | Requirement | Acceptance condition |
 |---|---|
-| Unit bridge | `IRUnits(scale:)` and `validatedScale` are available and tested |
+| Unit ownership | `IRLibrary` stores `DatabaseUnitScale` directly and raw scales are validated before construction |
 | Dependency direction | Only domain targets depend on Foundation; Foundation never depends on codecs |
-| Exactness boundary | Checked boolean APIs do not fall back to approximate geometry |
+| Exactness boundary | Canonical throwing boolean APIs never fall back to approximate geometry |
 | Consumer interoperability | Layout IR remains independent of `semiconductor-layout` |
 
 ## Explicit non-goals

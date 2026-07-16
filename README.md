@@ -22,10 +22,10 @@ flowchart LR
   IR --> Consumers["semiconductor-layout\nother engines"]
 ```
 
-`LayoutIR.IRUnits` can be created from and validated through
-`CircuiteFoundation.DatabaseUnitScale`. The existing non-throwing initializer
-is retained for file-format compatibility; GDSII and OASIS readers and writers
-validate units at their external boundary before coordinate conversion.
+`LayoutIR.IRLibrary` stores
+`CircuiteFoundation.DatabaseUnitScale` directly. Every codec receives or
+decodes a validated scale before coordinate conversion, so an unvalidated raw
+floating-point scale cannot enter the format-neutral layout model.
 
 ## Modules
 
@@ -47,9 +47,9 @@ validate units at their external boundary before coordinate conversion.
 - All public IR values are `Codable`, `Hashable`, and `Sendable`.
 - Format codecs preserve representable standard data and fail with typed errors
   for malformed input.
-- Exact-only boolean operations are exposed through the `*Checked` region
-  methods and reject unsupported non-Manhattan geometry rather than silently
-  using an approximate kernel.
+- `Region.intersection`, `union`, `symmetricDifference`, and `subtracting`
+  are throwing exact operations. They reject unsupported non-Manhattan
+  geometry instead of silently selecting an approximate kernel.
 - Geometry algorithms remain owned by `MaskGeometry`; Foundation only supplies
   cross-package vocabulary and validated unit conversion.
 

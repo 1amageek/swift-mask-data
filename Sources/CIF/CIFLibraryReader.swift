@@ -1,10 +1,14 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Reads a CIF (Caltech Intermediate Form) text file and converts it to an IRLibrary.
 public enum CIFLibraryReader {
 
-    public static func read(_ data: Data) throws -> IRLibrary {
+    public static func read(
+        _ data: Data,
+        databaseUnitScale: DatabaseUnitScale
+    ) throws -> IRLibrary {
         guard let text = String(data: data, encoding: .utf8) else {
             throw CIFError.invalidEncoding
         }
@@ -185,7 +189,11 @@ public enum CIFLibraryReader {
             cells.append(IRCell(name: name, elements: currentElements))
         }
 
-        return IRLibrary(name: "CIF", units: .default, cells: cells)
+        return IRLibrary(
+            name: "CIF",
+            databaseUnitScale: databaseUnitScale,
+            cells: cells
+        )
     }
 
     // MARK: - Helpers

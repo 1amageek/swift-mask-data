@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -9,7 +10,7 @@ struct GDSLibraryWriterTests {
     @Test func writeMinimalLibrary() throws {
         let lib = IRLibrary(
             name: "EMPTY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "TOP")
             ]
@@ -36,7 +37,7 @@ struct GDSLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "BNDTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "RECT", elements: [.boundary(boundary)])
             ]
@@ -59,7 +60,7 @@ struct GDSLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "PATHTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "WIRE", elements: [.path(path)])
             ]
@@ -79,7 +80,7 @@ struct GDSLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "TXTTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "LABEL", elements: [.text(text)])
             ]
@@ -110,7 +111,7 @@ struct GDSLibraryWriterTests {
         ])
         let lib = IRLibrary(
             name: "SREFTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [child, parent]
         )
         let data = try GDSLibraryWriter.write(lib)
@@ -135,7 +136,7 @@ struct GDSLibraryWriterTests {
         ])
         let lib = IRLibrary(
             name: "AREFTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [cell, top]
         )
         let data = try GDSLibraryWriter.write(lib)
@@ -149,7 +150,7 @@ struct GDSLibraryReaderTests {
     @Test func readMinimalLibrary() throws {
         let lib = IRLibrary(
             name: "EMPTY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "TOP")]
         )
         let data = try GDSLibraryWriter.write(lib)
@@ -175,7 +176,7 @@ struct GDSLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "BNDLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "RECT", elements: [.boundary(boundary)])]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -210,7 +211,7 @@ struct GDSLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "PATHLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "WIRE", elements: [.path(path)])]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -238,7 +239,7 @@ struct GDSLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "TXTLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "LABEL", elements: [.text(text)])]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -275,7 +276,7 @@ struct GDSLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "HIERLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [child, parent]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -320,7 +321,7 @@ struct GDSLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "ARLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [unit, top]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -339,16 +340,16 @@ struct GDSLibraryReaderTests {
     }
 
     @Test func readUnitsRoundTrip() throws {
-        let units = IRUnits(dbuPerMicron: 100)
+        let databaseUnitScale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 100)
         let original = IRLibrary(
             name: "ULIB",
-            units: units,
+            databaseUnitScale: databaseUnitScale,
             cells: [IRCell(name: "A")]
         )
         let data = try GDSLibraryWriter.write(original)
         let result = try GDSLibraryReader.read(data)
 
-        let relError = abs(result.units.dbuPerMicron - 100.0) / 100.0
+        let relError = abs(result.databaseUnitScale.databaseUnitsPerMicrometer - 100.0) / 100.0
         #expect(relError < 1e-6)
     }
 
@@ -361,7 +362,7 @@ struct GDSLibraryReaderTests {
         try writer.writeNoData(.endlib)
 
         let result = try GDSLibraryReader.read(writer.data)
-        #expect(abs(result.units.dbuPerMicron - 500.0) < 1e-6)
+        #expect(abs(result.databaseUnitScale.databaseUnitsPerMicrometer - 500.0) < 1e-6)
     }
 
     @Test func readUnitsRejectsInvalidScaleInsteadOfUsingDefault() throws {
@@ -391,7 +392,7 @@ struct GDSLibraryReaderTests {
         let cellModifiedAt = IRDateTime(year: 2026, month: 6, day: 7, hour: 8, minute: 9, second: 10)
         let original = IRLibrary(
             name: "TIMELIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(
                     name: "TOP",
@@ -441,7 +442,7 @@ struct GDSLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "MIXLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [cell]
         )
         let data = try GDSLibraryWriter.write(original)
@@ -470,7 +471,7 @@ struct GDSLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "XLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [cell]
         )
         let data = try GDSLibraryWriter.write(original)

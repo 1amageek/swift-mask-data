@@ -37,7 +37,7 @@ struct DXFBugFixTests {
             "  0", "EOF",
         ].joined(separator: "\n")
 
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(!lib.cells.isEmpty)
 
         // Find the boundary element from the hatch
@@ -96,7 +96,7 @@ struct DXFBugFixTests {
             "  0", "EOF",
         ].joined(separator: "\n")
 
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(!lib.cells.isEmpty)
 
         var foundBoundary = false
@@ -143,7 +143,7 @@ struct DXFBugFixTests {
             "  0", "EOF",
         ].joined(separator: "\n")
 
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         // TOP cell should have the INSERT
         let topCell = lib.cells[0]
         if case .cellRef(let ref) = topCell.elements[0] {
@@ -185,7 +185,7 @@ struct DXFBugFixTests {
             "  0", "EOF",
         ].joined(separator: "\n")
 
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let topCell = lib.cells[0]
         if case .cellRef(let ref) = topCell.elements[0] {
             #expect(abs(ref.transform.magnification - 2.0) < 1e-9)

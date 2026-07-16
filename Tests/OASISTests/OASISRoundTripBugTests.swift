@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -24,7 +25,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "NEGLAYER",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "NEG", elements: [.boundary(boundary)])]
         )
         #expect(throws: OASISError.self) {
@@ -52,7 +53,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "PROPTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "P", elements: [.boundary(boundary)])]
         )
         let data = try OASISLibraryWriter.write(lib)
@@ -86,7 +87,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "PATHEXT",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "W", elements: [.path(path)])]
         )
         let data = try OASISLibraryWriter.write(lib)
@@ -113,7 +114,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "ODD_PATH_WIDTH",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "W", elements: [.path(path)])]
         )
 
@@ -140,7 +141,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "ROUND_PATH",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "W", elements: [.path(path)])]
         )
 
@@ -162,7 +163,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "OPEN_BOUNDARY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "B", elements: [.boundary(boundary)])]
         )
 
@@ -188,7 +189,7 @@ struct OASISRoundTripBugTests {
         )
         let lib = IRLibrary(
             name: "NON_INTEGRAL_ARRAY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "UNIT"),
                 IRCell(name: "TOP", elements: [.arrayRef(array)]),

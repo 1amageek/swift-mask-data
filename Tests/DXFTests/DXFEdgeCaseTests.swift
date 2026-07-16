@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -38,7 +39,7 @@ struct DXFReaderEdgeCaseTests {
     @Test func invalidEncoding() throws {
         let data = Data([0xFF, 0xFE, 0x00, 0x01])
         do {
-            _ = try DXFLibraryReader.read(data)
+            _ = try DXFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
             Issue.record("Should have thrown")
         } catch let error as DXFError {
             #expect(error == .invalidEncoding)
@@ -47,7 +48,7 @@ struct DXFReaderEdgeCaseTests {
 
     @Test func lineWithIdenticalEndpoints() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n1\n 10\n5.0\n 20\n5.0\n 11\n5.0\n 21\n5.0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points[0] == p.points[1])
         } else {
@@ -57,7 +58,7 @@ struct DXFReaderEdgeCaseTests {
 
     @Test func lineWithNegativeCoordinates() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n1\n 10\n-10.0\n 20\n-20.0\n 11\n30.0\n 21\n40.0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points[0] == IRPoint(x: -10000, y: -20000))
             #expect(p.points[1] == IRPoint(x: 30000, y: 40000))
@@ -68,7 +69,7 @@ struct DXFReaderEdgeCaseTests {
 
     @Test func circleApproximation() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nCIRCLE\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n1.0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             // 64 segments + close = 65 points
             #expect(b.points.count == 65)
@@ -86,21 +87,21 @@ struct DXFReaderEdgeCaseTests {
 
     @Test func circleWithZeroRadius() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nCIRCLE\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n0.0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         // Zero radius should produce no element
         #expect(lib.cells.isEmpty)
     }
 
     @Test func textWithEmptyString() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nTEXT\n  8\n1\n 10\n0.0\n 20\n0.0\n  1\n\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         // Empty text should be skipped
         #expect(lib.cells.isEmpty)
     }
 
     @Test func customUnits() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n1\n 10\n1.0\n 20\n2.0\n 11\n3.0\n 21\n4.0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8), units: IRUnits(dbuPerMicron: 100))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 100))
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points[0] == IRPoint(x: 100, y: 200))
             #expect(p.points[1] == IRPoint(x: 300, y: 400))
@@ -113,7 +114,7 @@ struct DXFReaderEdgeCaseTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n1\n 10\n0\n 20\n0\n 11\n10\n 21\n0\n  0\nTEXT\n  8\n1\n 10\n5\n 20\n5\n  1\nHello\n  0\nLWPOLYLINE\n  8\n2\n 70\n1\n 10\n0\n 20\n0\n 10\n10\n 20\n0\n 10\n10\n 20\n10\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let elements = lib.cells[0].elements
         #expect(elements.count == 3)
         if case .path = elements[0] { } else { Issue.record("Expected path at 0") }
@@ -124,7 +125,7 @@ struct DXFReaderEdgeCaseTests {
     @Test func insertWithMissingBlock() throws {
         // INSERT referencing non-existent block should still parse
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nMISSING\n 10\n0\n 20\n0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .cellRef(let ref) = lib.cells[0].elements[0] {
             #expect(ref.cellName == "MISSING")
         } else {
@@ -134,7 +135,7 @@ struct DXFReaderEdgeCaseTests {
 
     @Test func fileWithOnlyEOF() throws {
         let dxf = "  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.isEmpty)
     }
 }

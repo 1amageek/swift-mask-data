@@ -46,7 +46,7 @@ struct DXFLibraryReaderTests {
 
     @Test func emptyEntities() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.isEmpty)
     }
 
@@ -54,7 +54,7 @@ struct DXFLibraryReaderTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\n1\n 10\n0.0\n 20\n0.0\n 11\n10.0\n 21\n5.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count == 2)
@@ -67,7 +67,7 @@ struct DXFLibraryReaderTests {
 
     @Test func lwpolylineOpen() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLWPOLYLINE\n  8\n1\n 70\n0\n 10\n0\n 20\n0\n 10\n10\n 20\n0\n 10\n10\n 20\n10\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = lib.cells[0].elements[0] {
             #expect(p.points.count == 3)
         } else {
@@ -77,7 +77,7 @@ struct DXFLibraryReaderTests {
 
     @Test func lwpolylineClosed() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLWPOLYLINE\n  8\n1\n 70\n1\n 10\n0\n 20\n0\n 10\n10\n 20\n0\n 10\n10\n 20\n10\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 4)
             #expect(b.points[0] == b.points[3])
@@ -88,7 +88,7 @@ struct DXFLibraryReaderTests {
 
     @Test func textEntity() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nTEXT\n  8\n2\n 10\n5.0\n 20\n5.0\n  1\nHello\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .text(let t) = lib.cells[0].elements[0] {
             #expect(t.string == "Hello")
             #expect(t.position == IRPoint(x: 5000, y: 5000))
@@ -101,7 +101,7 @@ struct DXFLibraryReaderTests {
         let dxf = """
           0\nSECTION\n  2\nBLOCKS\n  0\nBLOCK\n  2\nMYBLK\n  0\nLINE\n  8\n1\n 10\n0\n 20\n0\n 11\n1\n 21\n1\n  0\nENDBLK\n  0\nENDSEC\n  0\nSECTION\n  2\nENTITIES\n  0\nINSERT\n  2\nMYBLK\n 10\n5.0\n 20\n5.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         // MYBLK cell + TOP cell with INSERT
         #expect(lib.cells.count == 2)
         let topCell = lib.cells[0] // TOP is inserted at index 0
@@ -115,7 +115,7 @@ struct DXFLibraryReaderTests {
 
     @Test func layerMapping() throws {
         let dxf = "  0\nSECTION\n  2\nENTITIES\n  0\nLINE\n  8\nMETAL1\n 10\n0\n 20\n0\n 11\n1\n 21\n0\n  0\nLINE\n  8\nPOLY\n 10\n0\n 20\n0\n 11\n1\n 21\n0\n  0\nLINE\n  8\nMETAL1\n 10\n0\n 20\n0\n 11\n2\n 21\n0\n  0\nENDSEC\n  0\nEOF\n"
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8))
+        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
         let elements = lib.cells[0].elements
         #expect(elements.count == 3)
         // METAL1 and POLY should have different layers, second METAL1 should match first

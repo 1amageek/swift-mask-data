@@ -7,7 +7,7 @@ public enum OASISLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
         var w = OASISWriter()
-        let scale = try library.units.validatedScale
+        let scale = library.databaseUnitScale
 
         // Magic
         w.writeMagic()

@@ -5,7 +5,7 @@ import LayoutIR
 @Suite("MaskGeometry Bug Fixes")
 struct MaskGeometryBugFixTests {
 
-    @Test func testOctagonalSizingCorrectArea() {
+    @Test func testOctagonalSizingCorrectArea() throws {
         // Create a square polygon 0,0 -> 1000,1000
         let box = IRBoundary(layer: 1, datatype: 0, points: [
             IRPoint(x: 0, y: 0), IRPoint(x: 1000, y: 0),
@@ -17,15 +17,15 @@ struct MaskGeometryBugFixTests {
         let amount: Int32 = 100
 
         // Size with square corners (reference maximum)
-        let squareResult = region.sized(by: amount, cornerMode: .square)
+        let squareResult = try region.sized(by: amount, cornerMode: .square)
         let squareArea = squareResult.area
 
         // Size with octagonal corners
-        let octResult = region.sized(by: amount, cornerMode: .octagonal)
+        let octResult = try region.sized(by: amount, cornerMode: .octagonal)
         let octArea = octResult.area
 
         // Size with round corners (reference minimum, high segment count)
-        let roundResult = region.sized(by: amount, cornerMode: .round(segments: 16))
+        let roundResult = try region.sized(by: amount, cornerMode: .round(segments: 16))
         let roundArea = roundResult.area
 
         // Octagonal area should be between round and square
@@ -48,7 +48,7 @@ struct MaskGeometryBugFixTests {
         #expect(Double(octArea) > Double(squareArea) * 0.95)
     }
 
-    @Test func testGridCheckNegativeCoordinates() {
+    @Test func testGridCheckNegativeCoordinates() throws {
         // Polygon entirely in negative coordinate space, on grid
         let onGridPoly = IRBoundary(layer: 1, datatype: 0, points: [
             IRPoint(x: -100, y: -100), IRPoint(x: -50, y: -100),
@@ -89,7 +89,7 @@ struct MaskGeometryBugFixTests {
     /// what unrelated geometry happens to share the region — downstream
     /// width/spacing checks then report different marker boxes for the same
     /// feature.
-    @Test func testUnionBandsCanonicalAgainstUnrelatedRows() {
+    @Test func testUnionBandsCanonicalAgainstUnrelatedRows() throws {
         func rect(_ xMin: Int32, _ yMin: Int32, _ xMax: Int32, _ yMax: Int32) -> IRBoundary {
             IRBoundary(layer: 1, datatype: 0, points: [
                 IRPoint(x: xMin, y: yMin), IRPoint(x: xMax, y: yMin),
@@ -102,14 +102,14 @@ struct MaskGeometryBugFixTests {
         // global sweep rows inside the tall rectangle's span.
         let splitter = rect(5000, 300, 5100, 400)
 
-        let bands = { (region: Region) in
-            RegionBoolean.unionBands(region).map {
+        let bands = { (region: Region) throws in
+            try RegionBoolean.unionBands(region).map {
                 [$0.xMin, $0.xMax, $0.yMin, $0.yMax]
             }.sorted { $0.lexicographicallyPrecedes($1) }
         }
 
-        let alone = bands(Region(layer: 1, polygons: [tall]))
-        let together = bands(Region(layer: 1, polygons: [tall, splitter]))
+        let alone = try bands(Region(layer: 1, polygons: [tall]))
+        let together = try bands(Region(layer: 1, polygons: [tall, splitter]))
         #expect(alone == [[0, 100, 0, 1000]], "a lone rectangle must be exactly one band")
         #expect(
             together == [[0, 100, 0, 1000], [5000, 5100, 300, 400]],
@@ -119,10 +119,10 @@ struct MaskGeometryBugFixTests {
         // Two stacked abutting rectangles with the same x-extent are one
         // feature and must merge into a single band.
         let stacked = Region(layer: 1, polygons: [rect(0, 0, 100, 500), rect(0, 500, 100, 1000)])
-        #expect(bands(stacked) == [[0, 100, 0, 1000]], "stacked same-x rows must merge")
+        #expect(try bands(stacked) == [[0, 100, 0, 1000]], "stacked same-x rows must merge")
     }
 
-    @Test func scanlineSweepRejectsInvalidBands() {
+    @Test func scanlineSweepRejectsInvalidBands() throws {
         #expect(throws: ScanlineSweep.SweepError.invalidBand(
             input: "a",
             index: 0,

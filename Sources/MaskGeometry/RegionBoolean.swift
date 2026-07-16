@@ -1,18 +1,9 @@
 import LayoutIR
 
-/// Boolean operations on regions using scanline decomposition (Manhattan)
-/// or edge processor (non-Manhattan).
+/// Exact boolean operations on rectilinear regions using scanline decomposition.
 enum RegionBoolean {
 
-    static func perform(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
-        do {
-            return try checkedPerform(op, a, b)
-        } catch {
-            return performGeneral(op, a, b)
-        }
-    }
-
-    static func checkedPerform(_ op: BooleanOperation, _ a: Region, _ b: Region) throws -> Region {
+    static func perform(_ op: BooleanOperation, _ a: Region, _ b: Region) throws -> Region {
         for (index, polygon) in a.polygons.enumerated() {
             guard PolygonGeometry.isManhattan(polygon.points) else {
                 throw RegionBooleanError.unsupportedNonManhattanGeometry(
@@ -40,15 +31,15 @@ enum RegionBoolean {
         try ScanlineSweep.checkedSweepRows(decompose(a), decompose(b)) { yMin, yMax, intervalsA, intervalsB in
             let result: [Interval]
             switch op {
-            case .or:
+            case .union:
                 result = unionIntervals(intervalsA + intervalsB)
-            case .and:
+            case .intersection:
                 result = intersectIntervals(intervalsA, intervalsB)
-            case .xor:
+            case .symmetricDifference:
                 let u = unionIntervals(intervalsA + intervalsB)
                 let inter = intersectIntervals(intervalsA, intervalsB)
                 result = subtractIntervals(u, inter)
-            case .not:
+            case .subtraction:
                 result = subtractIntervals(intervalsA, intervalsB)
             }
 
@@ -72,13 +63,6 @@ enum RegionBoolean {
         }
 
         return Region(layer: a.layer, polygons: mergeRectangles(polys, layer: a.layer))
-    }
-
-    // MARK: - General Path (edge processor)
-
-    private static func performGeneral(_ op: BooleanOperation, _ a: Region, _ b: Region) -> Region {
-        let result = EdgeProcessor.perform(op, on: a.polygons, b.polygons, layer: a.layer)
-        return Region(layer: a.layer, polygons: result)
     }
 
     // MARK: - Band Decomposition
@@ -108,15 +92,7 @@ enum RegionBoolean {
     /// rows at every y-coordinate in the region, so without it the bands of
     /// one connected component would fragment differently depending on what
     /// unrelated geometry happens to share the region.
-    static func unionBands(_ region: Region) -> [Band] {
-        do {
-            return try checkedUnionBands(region)
-        } catch {
-            return []
-        }
-    }
-
-    static func checkedUnionBands(_ region: Region) throws -> [Band] {
+    static func unionBands(_ region: Region) throws -> [Band] {
         var rows: [Band] = []
         try ScanlineSweep.checkedSweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
             for interval in unionIntervals(intervals) {

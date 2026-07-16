@@ -15,19 +15,19 @@ private func box(layer: Int16 = 1, x1: Int32, y1: Int32, x2: Int32, y2: Int32) -
 @Suite("XOR Partial Overlap")
 struct XORPartialOverlapTests {
 
-    @Test func xorPartialOverlapProducesTwoRegions() {
+    @Test func xorPartialOverlapProducesTwoRegions() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 50, y1: 0, x2: 150, y2: 100)])
-        let result = a.xor(b)
+        let result = try a.symmetricDifference(b)
         // XOR should produce area = 100*100 + 100*100 - 2*(50*100) = 10000
         #expect(result.area == 10000)
         #expect(!result.isEmpty)
     }
 
-    @Test func xorNoOverlap() {
+    @Test func xorNoOverlap() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 200, y1: 0, x2: 300, y2: 100)])
-        let result = a.xor(b)
+        let result = try a.symmetricDifference(b)
         #expect(result.area == 20000) // Both regions preserved
     }
 }
@@ -37,28 +37,28 @@ struct XORPartialOverlapTests {
 @Suite("Y-Gap Spacing")
 struct YGapSpacingTests {
 
-    @Test func verticalGapTooSmall() {
+    @Test func verticalGapTooSmall() throws {
         // Two boxes stacked vertically with 20-unit gap
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 0, y1: 120, x2: 100, y2: 220)])
-        let violations = a.spaceViolations(to: b, minSpace: 50)
+        let violations = try a.spaceViolations(to: b, minSpace: 50)
         // gap = 20 < 50, X ranges overlap fully → violation
         #expect(violations.count == 1)
     }
 
-    @Test func verticalGapSufficient() {
+    @Test func verticalGapSufficient() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 0, y1: 200, x2: 100, y2: 300)])
-        let violations = a.spaceViolations(to: b, minSpace: 50)
+        let violations = try a.spaceViolations(to: b, minSpace: 50)
         // gap = 100 >= 50 → no violation
         #expect(violations.isEmpty)
     }
 
-    @Test func verticalGapPartialXOverlap() {
+    @Test func verticalGapPartialXOverlap() throws {
         // Boxes overlap in X partially
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 50, y1: 110, x2: 150, y2: 210)])
-        let violations = a.spaceViolations(to: b, minSpace: 50)
+        let violations = try a.spaceViolations(to: b, minSpace: 50)
         // Y gap = 10 < 50, X overlap = 50..100 → violation
         #expect(violations.count == 1)
     }
@@ -69,7 +69,7 @@ struct YGapSpacingTests {
 @Suite("BoundingBox Coverage")
 struct BoundingBoxTests {
 
-    @Test func multiPolygonBoundingBox() {
+    @Test func multiPolygonBoundingBox() throws {
         let r = Region(layer: 1, polygons: [
             box(x1: -100, y1: -200, x2: 50, y2: 50),
             box(x1: 300, y1: 400, x2: 500, y2: 600),
@@ -81,12 +81,12 @@ struct BoundingBoxTests {
         #expect(bb?.maxY == 600)
     }
 
-    @Test func emptyRegionBoundingBox() {
+    @Test func emptyRegionBoundingBox() throws {
         let r = Region(layer: 1)
         #expect(r.boundingBox == nil)
     }
 
-    @Test func singlePolygonBoundingBox() {
+    @Test func singlePolygonBoundingBox() throws {
         let r = Region(layer: 1, polygons: [box(x1: 10, y1: 20, x2: 30, y2: 40)])
         let bb = r.boundingBox
         #expect(bb?.minX == 10)
@@ -101,18 +101,18 @@ struct BoundingBoxTests {
 @Suite("NOT Partial Overlap")
 struct NOTPartialOverlapTests {
 
-    @Test func notPartialSubtraction() {
+    @Test func notPartialSubtraction() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 200, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 100, y1: 0, x2: 300, y2: 100)])
-        let result = a.not(b)
+        let result = try a.subtracting(b)
         // a minus overlap = 0..100 x 0..100 = area 10000
         #expect(result.area == 10000)
     }
 
-    @Test func notNoOverlap() {
+    @Test func notNoOverlap() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 200, y1: 0, x2: 300, y2: 100)])
-        let result = a.not(b)
+        let result = try a.subtracting(b)
         #expect(result.area == 10000) // Unchanged
     }
 }
@@ -122,18 +122,18 @@ struct NOTPartialOverlapTests {
 @Suite("AND Partial Overlap")
 struct ANDPartialOverlapTests {
 
-    @Test func andPartialOverlap() {
+    @Test func andPartialOverlap() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 50, y1: 25, x2: 150, y2: 75)])
-        let result = a.and(b)
+        let result = try a.intersection(b)
         // Intersection: 50..100 x 25..75 = 50*50 = 2500
         #expect(result.area == 2500)
     }
 
-    @Test func andNoOverlap() {
+    @Test func andNoOverlap() throws {
         let a = Region(layer: 1, polygons: [box(x1: 0, y1: 0, x2: 100, y2: 100)])
         let b = Region(layer: 1, polygons: [box(x1: 200, y1: 200, x2: 300, y2: 300)])
-        let result = a.and(b)
+        let result = try a.intersection(b)
         #expect(result.isEmpty)
     }
 }

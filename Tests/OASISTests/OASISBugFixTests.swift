@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import LayoutIR
 import Testing
@@ -27,7 +28,7 @@ struct OASISBugFixTests {
     )
     let lib = IRLibrary(
       name: "RECTWHTEST",
-      units: .default,
+      databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
       cells: [IRCell(name: "R", elements: [.boundary(boundary)])]
     )
     let data = try OASISLibraryWriter.write(lib)
@@ -64,7 +65,7 @@ struct OASISBugFixTests {
     )
     let lib = IRLibrary(
       name: "WIDERECT",
-      units: .default,
+      databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
       cells: [IRCell(name: "WR", elements: [.boundary(boundary)])]
     )
     let data = try OASISLibraryWriter.write(lib)
@@ -437,7 +438,7 @@ struct OASISBugFixTests {
     let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
     let lib = IRLibrary(
       name: "AREFTEST",
-      units: .default,
+      databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
       cells: [child, parent]
     )
     let data = try OASISLibraryWriter.write(lib)
@@ -475,7 +476,7 @@ struct OASISBugFixTests {
       properties: []
     )
     let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
-    let lib = IRLibrary(name: "ONECOL", units: .default, cells: [child, parent])
+    let lib = IRLibrary(name: "ONECOL", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [child, parent])
 
     let data = try OASISLibraryWriter.write(lib)
     let result = try OASISLibraryReader.read(data)
@@ -504,7 +505,7 @@ struct OASISBugFixTests {
       properties: []
     )
     let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
-    let lib = IRLibrary(name: "ONEROW", units: .default, cells: [child, parent])
+    let lib = IRLibrary(name: "ONEROW", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [child, parent])
 
     let data = try OASISLibraryWriter.write(lib)
     let result = try OASISLibraryReader.read(data)
@@ -533,7 +534,7 @@ struct OASISBugFixTests {
       properties: []
     )
     let parent = IRCell(name: "ARRAY_TOP", elements: [.arrayRef(arrayRef)])
-    let lib = IRLibrary(name: "ONEROW_TRANSFORM", units: .default, cells: [child, parent])
+    let lib = IRLibrary(name: "ONEROW_TRANSFORM", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [child, parent])
 
     let data = try OASISLibraryWriter.write(lib)
     let result = try OASISLibraryReader.read(data)

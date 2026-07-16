@@ -20,8 +20,8 @@ geometry operations without knowing how a project is scheduled or approved.
 `CircuiteFoundation` is a direct dependency of `LayoutIR`:
 
 - `DatabaseUnitScale` validates positive finite database-unit scales.
-- `IRUnits(scale:)` and `IRUnits.validatedScale` provide an explicit bridge
-  between file-format units and the shared scale type.
+- `IRLibrary.databaseUnitScale` owns `DatabaseUnitScale` directly. LayoutIR
+  does not define a second unit type or accept an unvalidated raw scale.
 - Artifact, provenance, diagnostic, and engine protocols remain available to
   consuming packages; this library does not wrap codec calls in a generic
   engine envelope.
@@ -38,11 +38,11 @@ flowchart TD
 
 ## Exactness policy
 
-Legacy region boolean methods may use the general geometry processor for
-compatibility. The `andChecked`, `orChecked`, `xorChecked`, and `notChecked`
-methods use only the exact rectilinear kernel and throw
-`RegionBooleanError.unsupportedNonManhattanGeometry` otherwise. Consumers must
-select the checked API for signoff paths.
+`Region.intersection`, `union`, `symmetricDifference`, and `subtracting` use
+only the exact rectilinear kernel. They throw
+`RegionBooleanError.unsupportedNonManhattanGeometry` for unsupported geometry.
+There is no public approximate fallback path, so every consumer observes the
+same failure contract.
 
 ## Extension point for implementation agents
 

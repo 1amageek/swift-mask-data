@@ -1,4 +1,5 @@
 import Foundation
+import CircuiteFoundation
 import LayoutIR
 
 /// Converts between LEFDocument and IRLibrary.
@@ -6,7 +7,7 @@ public enum LEFIRConverter {
 
     /// Convert a LEFDocument to an IRLibrary.
     /// Each MACRO becomes an IRCell with boundaries for PIN/OBS geometry.
-    public static func toIRLibrary(_ doc: LEFDocument) -> IRLibrary {
+    public static func toIRLibrary(_ doc: LEFDocument) throws -> IRLibrary {
         var layerMap: [String: Int16] = [:]
         for (idx, layer) in doc.layers.enumerated() {
             layerMap[layer.name] = Int16(idx + 1)
@@ -68,9 +69,12 @@ public enum LEFIRConverter {
             cells.append(IRCell(name: macro.name, elements: elements))
         }
 
+        let databaseUnitScale = try DatabaseUnitScale(
+            databaseUnitsPerMicrometer: dbu
+        )
         return IRLibrary(
             name: "LEF",
-            units: IRUnits(dbuPerMicron: dbu),
+            databaseUnitScale: databaseUnitScale,
             cells: cells
         )
     }
@@ -78,7 +82,7 @@ public enum LEFIRConverter {
     /// Convert an IRLibrary to a LEFDocument.
     /// Each IRCell becomes a MACRO. Boundaries become OBS geometry.
     public static func toLEFDocument(_ library: IRLibrary) -> LEFDocument {
-        let dbu = library.units.dbuPerMicron
+        let dbu = library.databaseUnitScale.databaseUnitsPerMicrometer
         var macros: [LEFMacroDef] = []
 
         for cell in library.cells {

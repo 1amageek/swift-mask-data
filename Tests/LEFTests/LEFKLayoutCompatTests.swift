@@ -232,7 +232,7 @@ struct LEFPolygonTests {
         #expect(resultPoly[3] == LEFPoint(x: 0, y: 1))
     }
 
-    @Test func polygonIRConversion() {
+    @Test func polygonIRConversion() throws {
         let poly = [LEFPoint(x: 0, y: 0), LEFPoint(x: 0.5, y: 0),
                     LEFPoint(x: 0.5, y: 0.5), LEFPoint(x: 0, y: 0.5)]
         let doc = LEFDocument(
@@ -244,7 +244,7 @@ struct LEFPolygonTests {
                 ])
             ])]
         )
-        let lib = LEFIRConverter.toIRLibrary(doc)
+        let lib = try LEFIRConverter.toIRLibrary(doc)
         let elements = lib.cells[0].elements
         // 1 boundary (polygon) + 1 text label
         #expect(elements.count == 2)

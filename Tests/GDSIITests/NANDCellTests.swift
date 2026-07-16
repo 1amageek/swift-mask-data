@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -8,7 +9,7 @@ struct NANDCellTests {
 
     /// Build a simplified NAND2 memory cell with realistic layer structure.
     /// Layers: 1=Diffusion, 2=Poly, 3=Metal1, 4=Contact, 5=Via
-    static func buildNAND2Library() -> IRLibrary {
+    static func buildNAND2Library() throws -> IRLibrary {
         // Cell dimensions: ~2µm × 3µm at 1000 DBU/µm
         let diffLayer: Int16 = 1
         let polyLayer: Int16 = 2
@@ -150,20 +151,20 @@ struct NANDCellTests {
 
         return IRLibrary(
             name: "NANDLIB",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [nandCell]
         )
     }
 
-    @Test func nandCellConstruction() {
-        let lib = NANDCellTests.buildNAND2Library()
+    @Test func nandCellConstruction() throws {
+        let lib = try NANDCellTests.buildNAND2Library()
         #expect(lib.cells.count == 1)
         #expect(lib.cells[0].name == "NAND2")
         #expect(lib.cells[0].elements.count == 12)
     }
 
     @Test func nandCellGDSIIRoundTrip() throws {
-        let original = NANDCellTests.buildNAND2Library()
+        let original = try NANDCellTests.buildNAND2Library()
 
         // Write to GDSII
         let data = try GDSLibraryWriter.write(original)
@@ -198,7 +199,7 @@ struct NANDCellTests {
     }
 
     @Test func nandCellPointsPreserved() throws {
-        let original = NANDCellTests.buildNAND2Library()
+        let original = try NANDCellTests.buildNAND2Library()
         let data = try GDSLibraryWriter.write(original)
         let result = try GDSLibraryReader.read(data)
 
@@ -218,7 +219,7 @@ struct NANDCellTests {
     }
 
     @Test func nandCellTextPreserved() throws {
-        let original = NANDCellTests.buildNAND2Library()
+        let original = try NANDCellTests.buildNAND2Library()
         let data = try GDSLibraryWriter.write(original)
         let result = try GDSLibraryReader.read(data)
 
@@ -236,7 +237,7 @@ struct NANDCellTests {
     }
 
     @Test func nandCellDoubleRoundTrip() throws {
-        let original = NANDCellTests.buildNAND2Library()
+        let original = try NANDCellTests.buildNAND2Library()
 
         // Write → Read → Write → Read
         let data1 = try GDSLibraryWriter.write(original)
@@ -257,7 +258,7 @@ struct NANDCellTests {
 
     @Test func nandCellWithHierarchy() throws {
         // Create a NAND cell and instantiate it in a top cell
-        let nandLib = NANDCellTests.buildNAND2Library()
+        let nandLib = try NANDCellTests.buildNAND2Library()
         let nandCell = nandLib.cells[0]
 
         let topCell = IRCell(name: "TOP", elements: [
@@ -277,7 +278,7 @@ struct NANDCellTests {
 
         let lib = IRLibrary(
             name: "NANDTOP",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [nandCell, topCell]
         )
 

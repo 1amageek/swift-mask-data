@@ -64,47 +64,47 @@ struct MaskGeometryScaleBenchmarkTests {
         ], properties: [])
     }
 
-    private func measure<T>(_ label: String, _ body: () -> T) -> T {
+    private func measure<T>(_ label: String, _ body: () throws -> T) rethrows -> T {
         let clock = ContinuousClock()
         var result: T? = nil
-        let duration = clock.measure { result = body() }
+        let duration = try clock.measure { result = try body() }
         let ms = Double(duration.components.seconds) * 1000
             + Double(duration.components.attoseconds) / 1e15
         print("[bench] \(label): \(String(format: "%.1f", ms))ms")
         return result!
     }
 
-    private func runScale(rows: Int, cols: Int) {
+    private func runScale(rows: Int, cols: Int) throws {
         let wires = wireGrid(rows: rows, cols: cols)
         let cuts = viaCuts(rows: rows, cols: cols)
         let tag = "\(wires.polygons.count)p"
 
-        let merged = measure("merge \(tag)") {
-            wires.or(Region(layer: 1))
+        let merged = try measure("merge \(tag)") {
+            try wires.union(Region(layer: 1))
         }
         #expect(!merged.isEmpty)
 
-        let spacing = measure("selfSpace \(tag)") {
-            wires.selfSpaceViolations(minSpace: Self.minSpace)
+        let spacing = try measure("selfSpace \(tag)") {
+            try wires.selfSpaceViolations(minSpace: Self.minSpace)
         }
         #expect(spacing.isEmpty, "synthetic grid is spacing-clean by construction")
 
-        let widths = measure("width \(tag)") {
-            wires.widthViolations(minWidth: Self.wireWidth)
+        let widths = try measure("width \(tag)") {
+            try wires.widthViolations(minWidth: Self.wireWidth)
         }
         #expect(widths.isEmpty, "synthetic grid is width-clean by construction")
 
-        let enclosure = measure("enclosure \(tag)") {
-            wires.enclosureViolations(inner: cuts, minEnclosure: 5)
+        let enclosure = try measure("enclosure \(tag)") {
+            try wires.enclosureViolations(inner: cuts, minEnclosure: 5)
         }
         #expect(enclosure.isEmpty, "via cuts are enclosed by construction")
     }
 
-    @Test func smallScale() {
-        runScale(rows: 60, cols: 60)
+    @Test func smallScale() throws {
+        try runScale(rows: 60, cols: 60)
     }
 
-    @Test func mediumScale() {
-        runScale(rows: 140, cols: 140)
+    @Test func mediumScale() throws {
+        try runScale(rows: 140, cols: 140)
     }
 }

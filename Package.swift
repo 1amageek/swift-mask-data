@@ -41,11 +41,36 @@ let package = Package(
             ]
         ),
         .target(name: "FormatDetector", dependencies: ["LayoutIR"]),
-        .target(name: "CIF", dependencies: ["LayoutIR"]),
+        .target(
+            name: "CIF",
+            dependencies: [
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
         .target(name: "TechIR"),
-        .target(name: "LEF", dependencies: ["LayoutIR", "TechIR"]),
-        .target(name: "DEF", dependencies: ["LayoutIR"]),
-        .target(name: "DXF", dependencies: ["LayoutIR"]),
+        .target(
+            name: "LEF",
+            dependencies: [
+                "LayoutIR",
+                "TechIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .target(
+            name: "DEF",
+            dependencies: [
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .target(
+            name: "DXF",
+            dependencies: [
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
         .target(name: "MaskGeometry", dependencies: ["LayoutIR"]),
         .testTarget(
             name: "LayoutIRTests",
@@ -54,7 +79,14 @@ let package = Package(
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
-        .testTarget(name: "GDSIITests", dependencies: ["GDSII", "LayoutIR"]),
+        .testTarget(
+            name: "GDSIITests",
+            dependencies: [
+                "GDSII",
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
         .testTarget(
             name: "OASISTests",
             dependencies: [
@@ -64,16 +96,61 @@ let package = Package(
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
-        .testTarget(name: "FormatDetectorTests", dependencies: ["FormatDetector", "GDSII", "OASIS"]),
-        .testTarget(name: "CIFTests", dependencies: ["CIF", "LayoutIR"]),
+        .testTarget(
+            name: "FormatDetectorTests",
+            dependencies: [
+                "FormatDetector",
+                "GDSII",
+                "OASIS",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .testTarget(
+            name: "CIFTests",
+            dependencies: [
+                "CIF",
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
         .testTarget(name: "TechIRTests", dependencies: ["TechIR"]),
-        .testTarget(name: "LEFTests", dependencies: ["LEF", "LayoutIR", "TechIR"]),
-        .testTarget(name: "DEFTests", dependencies: ["DEF", "LayoutIR"]),
-        .testTarget(name: "DXFTests", dependencies: ["DXF", "LayoutIR"]),
+        .testTarget(
+            name: "LEFTests",
+            dependencies: [
+                "LEF",
+                "LayoutIR",
+                "TechIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .testTarget(
+            name: "DEFTests",
+            dependencies: [
+                "DEF",
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
+        .testTarget(
+            name: "DXFTests",
+            dependencies: [
+                "DXF",
+                "LayoutIR",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
+        ),
         .testTarget(name: "MaskGeometryTests", dependencies: ["MaskGeometry", "LayoutIR"]),
         .testTarget(
             name: "GoldenCorpusTests",
-            dependencies: ["LayoutIR", "GDSII", "OASIS", "LEF", "DEF", "FormatDetector"]
+            dependencies: [
+                "LayoutIR",
+                "GDSII",
+                "OASIS",
+                "LEF",
+                "DEF",
+                "FormatDetector",
+                .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+            ]
         ),
     ]
 )

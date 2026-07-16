@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 @testable import LayoutIR
 
@@ -19,24 +20,6 @@ struct IRPointTests {
         let a = IRPoint(x: 1, y: 2)
         let b = IRPoint(x: 1, y: 3)
         #expect(a != b)
-    }
-}
-
-@Suite("IRUnits")
-struct IRUnitsTests {
-    @Test func defaultUnits() {
-        let u = IRUnits.default
-        #expect(u.dbuPerMicron == 1000)
-    }
-
-    @Test func customUnits() {
-        let u = IRUnits(dbuPerMicron: 100)
-        #expect(u.dbuPerMicron == 100)
-    }
-
-    @Test func metersPerDBU() {
-        let u = IRUnits(dbuPerMicron: 1000)
-        #expect(abs(u.metersPerDBU - 1e-9) < 1e-20)
     }
 }
 
@@ -214,23 +197,23 @@ struct IRCellTests {
 
 @Suite("IRLibrary")
 struct IRLibraryTests {
-    @Test func emptyLibrary() {
-        let lib = IRLibrary(name: "TEST_LIB", units: .default)
+    @Test func emptyLibrary() throws {
+        let lib = IRLibrary(name: "TEST_LIB", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000))
         #expect(lib.name == "TEST_LIB")
         #expect(lib.cells.isEmpty)
     }
 
-    @Test func cellLookup() {
+    @Test func cellLookup() throws {
         let cell = IRCell(name: "NAND2")
-        let lib = IRLibrary(name: "LIB", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "LIB", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         #expect(lib.cell(named: "NAND2") != nil)
         #expect(lib.cell(named: "INV") == nil)
     }
 
-    @Test func multipleCells() {
+    @Test func multipleCells() throws {
         let a = IRCell(name: "A")
         let b = IRCell(name: "B")
-        let lib = IRLibrary(name: "LIB", units: .default, cells: [a, b])
+        let lib = IRLibrary(name: "LIB", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [a, b])
         #expect(lib.cells.count == 2)
     }
 }

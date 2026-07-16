@@ -1,6 +1,8 @@
+import CircuiteFoundation
+
 public struct IRLibrary: Hashable, Sendable, Codable {
     public var name: String
-    public var units: IRUnits
+    public var databaseUnitScale: DatabaseUnitScale
     public var cells: [IRCell]
     /// File-level metadata (e.g. OASIS standard properties).
     public var metadata: [String: String]
@@ -9,14 +11,14 @@ public struct IRLibrary: Hashable, Sendable, Codable {
 
     public init(
         name: String,
-        units: IRUnits = .default,
+        databaseUnitScale: DatabaseUnitScale,
         cells: [IRCell] = [],
         metadata: [String: String] = [:],
         createdAt: IRDateTime? = nil,
         modifiedAt: IRDateTime? = nil
     ) {
         self.name = name
-        self.units = units
+        self.databaseUnitScale = databaseUnitScale
         self.cells = cells
         self.metadata = metadata
         self.createdAt = createdAt

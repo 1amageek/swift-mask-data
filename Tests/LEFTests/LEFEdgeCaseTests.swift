@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -198,13 +199,13 @@ struct LEFWriterEdgeCaseTests {
 @Suite("LEF IR Converter Edge Cases")
 struct LEFIRConverterEdgeCaseTests {
 
-    @Test func emptyDocument() {
+    @Test func emptyDocument() throws {
         let doc = LEFDocument()
-        let lib = LEFIRConverter.toIRLibrary(doc)
+        let lib = try LEFIRConverter.toIRLibrary(doc)
         #expect(lib.cells.isEmpty)
     }
 
-    @Test func macroWithMultiplePins() {
+    @Test func macroWithMultiplePins() throws {
         let doc = LEFDocument(
             layers: [LEFLayerDef(name: "metal1", type: .routing)],
             macros: [LEFMacroDef(name: "NAND2", pins: [
@@ -213,16 +214,16 @@ struct LEFIRConverterEdgeCaseTests {
                 LEFPinDef(name: "Y", ports: [LEFPort(layerName: "metal1", rects: [LEFRect(x1: 0.6, y1: 0, x2: 0.7, y2: 0.2)])]),
             ])]
         )
-        let lib = LEFIRConverter.toIRLibrary(doc)
+        let lib = try LEFIRConverter.toIRLibrary(doc)
         let cell = lib.cells[0]
         // 3 pins × (1 boundary + 1 text) = 6 elements
         #expect(cell.elements.count == 6)
     }
 
-    @Test func roundTripIRToLEFToIR() {
+    @Test func roundTripIRToLEFToIR() throws {
         let original = IRLibrary(
             name: "TEST",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [IRCell(name: "BUF", elements: [
                 .boundary(IRBoundary(layer: 1, datatype: 0, points: [
                     IRPoint(x: 0, y: 0), IRPoint(x: 500, y: 0),
@@ -232,7 +233,7 @@ struct LEFIRConverterEdgeCaseTests {
             ])]
         )
         let lef = LEFIRConverter.toLEFDocument(original)
-        let back = LEFIRConverter.toIRLibrary(lef)
+        let back = try LEFIRConverter.toIRLibrary(lef)
         // Cell name preserved
         #expect(back.cells[0].name == "BUF")
         // Geometry preserved (via OBS)

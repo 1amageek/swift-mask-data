@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -7,7 +8,7 @@ import LayoutIR
 struct CIFWriterTests {
 
     @Test func writeEmptyLibrary() throws {
-        let lib = IRLibrary(name: "empty", units: .default, cells: [])
+        let lib = IRLibrary(name: "empty", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("E"))
@@ -23,7 +24,7 @@ struct CIFWriterTests {
                 IRPoint(x: 0, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("B 100 50 50 25"))
@@ -41,7 +42,7 @@ struct CIFWriterTests {
                 IRPoint(x: 0, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("P 0 0 100 0 50 100"))
@@ -55,7 +56,7 @@ struct CIFWriterTests {
                             IRPoint(x: 1000, y: 0),
                         ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("W 200 0 0 1000 0"))
@@ -67,7 +68,7 @@ struct CIFWriterTests {
                         position: IRPoint(x: 500, y: 600),
                         string: "VDD", properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("9 VDD 500 600"))
@@ -83,7 +84,7 @@ struct CIFWriterTests {
                                    properties: []))
             ])
         ]
-        let lib = IRLibrary(name: "test", units: .default, cells: cells)
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: cells)
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("C 1 T 100 200"))
@@ -99,7 +100,7 @@ struct CIFWriterTests {
                                    properties: []))
             ])
         ]
-        let lib = IRLibrary(name: "test", units: .default, cells: cells)
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: cells)
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("M Y"))
@@ -116,7 +117,7 @@ struct CIFWriterTests {
                 IRPoint(x: 20, y: 20), IRPoint(x: 0, y: 20), IRPoint(x: 0, y: 0),
             ], properties: [])),
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
         let text = String(data: data, encoding: .utf8)!
         #expect(text.contains("L 1"))
@@ -133,9 +134,9 @@ struct CIFWriterTests {
                 IRPoint(x: 100, y: 200),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
-        let result = try CIFLibraryReader.read(data)
+        let result = try CIFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
 
         #expect(result.cells.count == 1)
         #expect(result.cells[0].elements.count == 1)
@@ -160,9 +161,9 @@ struct CIFWriterTests {
                 IRPoint(x: 0, y: 0),
             ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
-        let result = try CIFLibraryReader.read(data)
+        let result = try CIFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = result.cells[0].elements[0] {
             #expect(b.points.count == 4) // auto-closed
         }
@@ -177,9 +178,9 @@ struct CIFWriterTests {
                             IRPoint(x: 500, y: 500),
                         ], properties: []))
         ])
-        let lib = IRLibrary(name: "test", units: .default, cells: [cell])
+        let lib = IRLibrary(name: "test", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [cell])
         let data = try CIFLibraryWriter.write(lib)
-        let result = try CIFLibraryReader.read(data)
+        let result = try CIFLibraryReader.read(data, databaseUnitScale: try testDatabaseUnitScale())
         if case .path(let p) = result.cells[0].elements[0] {
             #expect(p.width == 200)
             #expect(p.points.count == 3)
@@ -199,7 +200,7 @@ struct CIFDirectionVectorTests {
         DF;
         E
         """
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         #expect(lib.cells.count == 1)
         if case .boundary(let b) = lib.cells[0].elements[0] {
             #expect(b.points.count == 5)
@@ -224,7 +225,7 @@ struct CIFDirectionVectorTests {
         DF;
         E
         """
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             let xs = b.points.map(\.x)
             let ys = b.points.map(\.y)
@@ -244,7 +245,7 @@ struct CIFDirectionVectorTests {
         DF;
         E
         """
-        let lib = try CIFLibraryReader.read(Data(cif.utf8))
+        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         if case .boundary(let b) = lib.cells[0].elements[0] {
             let xs = b.points.map(\.x)
             let ys = b.points.map(\.y)

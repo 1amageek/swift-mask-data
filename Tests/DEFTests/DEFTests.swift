@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -336,7 +337,7 @@ struct DEFIRConverterTests {
         #expect(decoded.pins[0].placementStatus == .placed)
     }
 
-    @Test func irCellRefsExportAsPlacedDEFComponents() {
+    @Test func irCellRefsExportAsPlacedDEFComponents() throws {
         let reference = IRCellRef(
             cellName: "INV",
             origin: IRPoint(x: 320, y: 640),
@@ -344,7 +345,7 @@ struct DEFIRConverterTests {
         )
         let library = IRLibrary(
             name: "chip",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [
                 IRCell(name: "chip", elements: [.cellRef(reference)]),
                 IRCell(name: "INV"),
@@ -416,7 +417,7 @@ struct DEFIRConverterTests {
             ]
         )
 
-        let library = try DEFIRConverter.toIRLibraryChecked(
+        let library = try DEFIRConverter.toIRLibrary(
             original,
             layerNumbers: try DEFLayerNumberMapping(layerNumbersByName: [
                 "metal1": 1,
@@ -488,7 +489,7 @@ struct DEFIRConverterTests {
             ]
         )
 
-        let library = try DEFIRConverter.toIRLibraryChecked(
+        let library = try DEFIRConverter.toIRLibrary(
             original,
             layerNumbers: try DEFLayerNumberMapping(layerNumbersByName: [
                 "li1": 10,
@@ -528,7 +529,7 @@ struct DEFIRConverterTests {
         )
 
         #expect(throws: DEFIRConverterError.missingLayerMapping(layerName: "met1")) {
-            _ = try DEFIRConverter.toIRLibraryChecked(original)
+            _ = try DEFIRConverter.toIRLibrary(original)
         }
     }
 
@@ -555,7 +556,7 @@ struct DEFIRConverterTests {
             layerName: "met1",
             reason: "DEF regular route requires at least two placement points."
         )) {
-            _ = try DEFIRConverter.toIRLibraryChecked(
+            _ = try DEFIRConverter.toIRLibrary(
                 original,
                 layerNumbers: try DEFLayerNumberMapping(layerNumbersByName: ["met1": 1])
             )
@@ -586,7 +587,7 @@ struct DEFIRConverterTests {
             layerName: "met1",
             reason: "DEF special route requires at least two placement points."
         )) {
-            _ = try DEFIRConverter.toIRLibraryChecked(
+            _ = try DEFIRConverter.toIRLibrary(
                 original,
                 layerNumbers: try DEFLayerNumberMapping(layerNumbersByName: ["met1": 1])
             )
@@ -618,7 +619,7 @@ struct DEFIRConverterTests {
             layerName: "met1",
             reason: "DEF special route requires a positive width."
         )) {
-            _ = try DEFIRConverter.toIRLibraryChecked(
+            _ = try DEFIRConverter.toIRLibrary(
                 original,
                 layerNumbers: try DEFLayerNumberMapping(layerNumbersByName: ["met1": 1])
             )

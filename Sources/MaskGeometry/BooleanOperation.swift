@@ -1,7 +1,7 @@
-/// Boolean operation types for region operations.
-public enum BooleanOperation: Sendable {
-    case and
-    case or
-    case xor
-    case not
+/// Boolean operations supported by the exact region kernel.
+enum BooleanOperation: Sendable {
+    case intersection
+    case union
+    case symmetricDifference
+    case subtraction
 }

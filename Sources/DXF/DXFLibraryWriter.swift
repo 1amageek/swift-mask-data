@@ -17,7 +17,7 @@ public enum DXFLibraryWriter {
     }
 
     public static func write(_ library: IRLibrary, options: Options = .init()) throws -> Data {
-        let dbu = library.units.dbuPerMicron
+        let dbu = library.databaseUnitScale.databaseUnitsPerMicrometer
         var lines: [String] = []
 
         // HEADER section

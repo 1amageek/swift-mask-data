@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Foundation
 import Testing
 import LayoutIR
@@ -10,7 +11,7 @@ import FormatDetector
 @Suite("Golden Mask Data Corpus")
 struct GoldenMaskDataCorpusTests {
     @Test func gdsiiGoldenCorpusRoundTripIsStable() throws {
-        let original = Self.goldenLayoutLibrary()
+        let original = try Self.goldenLayoutLibrary()
         let data = try GDSLibraryWriter.write(original)
 
         #expect(FormatDetector.detect(data) == .gdsii)
@@ -25,7 +26,7 @@ struct GoldenMaskDataCorpusTests {
     }
 
     @Test func oasisGoldenCorpusRoundTripIsStable() throws {
-        let original = Self.goldenLayoutLibrary()
+        let original = try Self.goldenLayoutLibrary()
         let data = try OASISLibraryWriter.write(original)
 
         #expect(FormatDetector.detect(data) == .oasis)
@@ -71,7 +72,7 @@ struct GoldenMaskDataCorpusTests {
         #expect(reloaded.nets.map(\.name) == loaded.nets.map(\.name))
     }
 
-    private static func goldenLayoutLibrary() -> IRLibrary {
+    private static func goldenLayoutLibrary() throws -> IRLibrary {
         let top = IRCell(name: "TOP", elements: [
             .boundary(IRBoundary(
                 layer: 1,
@@ -125,7 +126,7 @@ struct GoldenMaskDataCorpusTests {
 
         return IRLibrary(
             name: "GOLDEN_VDIV",
-            units: IRUnits(dbuPerMicron: 1000),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
             cells: [top]
         )
     }

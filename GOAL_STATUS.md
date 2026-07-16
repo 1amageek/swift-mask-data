@@ -4,11 +4,12 @@
 
 - `CircuiteFoundation` is a local Swift Package Manager dependency of
   `LayoutIR`.
-- `IRUnits` exposes a validated `DatabaseUnitScale` bridge.
+- `IRLibrary` owns `DatabaseUnitScale` directly without a duplicate unit type.
 - GDSII and OASIS readers and writers validate unit metadata through the
   shared `DatabaseUnitScale` boundary and preserve typed, location-aware
   failures for invalid input.
-- Exact-only region boolean operations retain their typed safety boundary.
+- Canonical region boolean operations are exact, throwing, and have no silent
+  approximate fallback.
 - Standalone responsibilities and implementation-agent hand-off rules are
   documented.
 

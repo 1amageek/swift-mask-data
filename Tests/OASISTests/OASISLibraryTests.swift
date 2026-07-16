@@ -13,7 +13,7 @@ struct OASISLibraryWriterTests {
     @Test func writeMinimalLibrary() throws {
         let lib = IRLibrary(
             name: "EMPTY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "TOP")]
         )
         let data = try OASISLibraryWriter.write(lib)
@@ -38,7 +38,7 @@ struct OASISLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "BNDTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "RECT", elements: [.boundary(boundary)])
             ]
@@ -61,7 +61,7 @@ struct OASISLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "PATHTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "WIRE", elements: [.path(path)])
             ]
@@ -81,7 +81,7 @@ struct OASISLibraryWriterTests {
         )
         let lib = IRLibrary(
             name: "TXTTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [
                 IRCell(name: "LABEL", elements: [.text(text)])
             ]
@@ -112,7 +112,7 @@ struct OASISLibraryWriterTests {
         ])
         let lib = IRLibrary(
             name: "PLCTEST",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [child, parent]
         )
         let data = try OASISLibraryWriter.write(lib)
@@ -128,7 +128,7 @@ struct OASISLibraryReaderTests {
     @Test func readMinimalLibrary() throws {
         let lib = IRLibrary(
             name: "EMPTY",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "TOP")]
         )
         let data = try OASISLibraryWriter.write(lib)
@@ -162,20 +162,6 @@ struct OASISLibraryReaderTests {
         }
     }
 
-    @Test func writersRejectInvalidUnitScale() throws {
-        let library = IRLibrary(
-            name: "INVALID_UNITS",
-            units: IRUnits(dbuPerMicron: 0),
-            cells: []
-        )
-        #expect(throws: DatabaseUnitScaleError.self) {
-            _ = try OASISLibraryWriter.write(library)
-        }
-        #expect(throws: DatabaseUnitScaleError.self) {
-            _ = try GDSLibraryWriter.write(library)
-        }
-    }
-
     @Test func readBoundaryRoundTrip() throws {
         let boundary = IRBoundary(
             layer: 5,
@@ -191,7 +177,7 @@ struct OASISLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "BNDLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "RECT", elements: [.boundary(boundary)])]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -226,7 +212,7 @@ struct OASISLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "PATHLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "WIRE", elements: [.path(path)])]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -254,7 +240,7 @@ struct OASISLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "TXTLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "LABEL", elements: [.text(text)])]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -292,7 +278,7 @@ struct OASISLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "HIERLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [child, parent]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -320,7 +306,7 @@ struct OASISLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "XLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [cell]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -338,16 +324,16 @@ struct OASISLibraryReaderTests {
     }
 
     @Test func readUnitsRoundTrip() throws {
-        let units = IRUnits(dbuPerMicron: 100)
+        let databaseUnitScale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 100)
         let original = IRLibrary(
             name: "ULIB",
-            units: units,
+            databaseUnitScale: databaseUnitScale,
             cells: [IRCell(name: "A")]
         )
         let data = try OASISLibraryWriter.write(original)
         let result = try OASISLibraryReader.read(data)
 
-        let relError = abs(result.units.dbuPerMicron - 100.0) / 100.0
+        let relError = abs(result.databaseUnitScale.databaseUnitsPerMicrometer - 100.0) / 100.0
         #expect(relError < 1e-6)
     }
 
@@ -378,7 +364,7 @@ struct OASISLibraryReaderTests {
         ])
         let original = IRLibrary(
             name: "MIXLIB",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [cell]
         )
         let data = try OASISLibraryWriter.write(original)
@@ -412,7 +398,7 @@ struct OASISLibraryReaderTests {
         )
         let original = IRLibrary(
             name: "RECTOPT",
-            units: .default,
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000),
             cells: [IRCell(name: "R", elements: [.boundary(boundary)])]
         )
         let data = try OASISLibraryWriter.write(original)

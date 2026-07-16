@@ -1,3 +1,4 @@
+import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
@@ -74,14 +75,14 @@ struct FormatDetectorTests {
 
     @Test func realGDSII() throws {
         // Build a real GDSII binary from IRLibrary
-        let lib = IRLibrary(name: "TEST", units: .default, cells: [IRCell(name: "TOP")])
+        let lib = IRLibrary(name: "TEST", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [IRCell(name: "TOP")])
         let data = try GDSLibraryWriter.write(lib)
         #expect(FormatDetector.detect(data) == .gdsii)
     }
 
     @Test func realOASIS() throws {
         // Build a real OASIS binary from IRLibrary
-        let lib = IRLibrary(name: "TEST", units: .default, cells: [IRCell(name: "TOP")])
+        let lib = IRLibrary(name: "TEST", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000), cells: [IRCell(name: "TOP")])
         let data = try OASISLibraryWriter.write(lib)
         #expect(FormatDetector.detect(data) == .oasis)
     }

@@ -5,23 +5,32 @@ import LayoutIR
 enum DRCCheck {
 
     /// Check minimum width of each polygon.
-    static func widthCheck(_ region: Region, minWidth: Int32, metric: DRCMetric = .euclidean) -> [IREdgePair] {
+    static func widthCheck(
+        _ region: Region,
+        minWidth: Int32,
+        metric: DRCMetric = .euclidean
+    ) throws -> [IREdgePair] {
         let allManhattan = region.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
 
         if allManhattan && metric == .euclidean {
-            return widthCheckManhattan(region, minWidth: minWidth)
+            return try widthCheckManhattan(region, minWidth: minWidth)
         }
 
         return EdgeDRC.widthCheck(region, minWidth: minWidth, metric: metric)
     }
 
     /// Check minimum spacing between two regions.
-    static func spaceCheck(_ a: Region, _ b: Region, minSpace: Int32, metric: DRCMetric = .euclidean) -> [IREdgePair] {
+    static func spaceCheck(
+        _ a: Region,
+        _ b: Region,
+        minSpace: Int32,
+        metric: DRCMetric = .euclidean
+    ) throws -> [IREdgePair] {
         let allManhattan = a.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
                         && b.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
 
         if allManhattan && metric == .euclidean {
-            return spaceCheckManhattan(a, b, minSpace: minSpace)
+            return try spaceCheckManhattan(a, b, minSpace: minSpace)
         }
 
         return EdgeDRC.spaceCheck(a, b, minSpace: minSpace, metric: metric)
@@ -31,12 +40,16 @@ enum DRCCheck {
     /// Merges the region first so touching or overlapping polygons never flag,
     /// then reports exterior gaps narrower than `minSpace` — including notches
     /// inside a single connected component and diagonal corner gaps.
-    static func selfSpaceCheck(_ region: Region, minSpace: Int32, metric: DRCMetric = .euclidean) -> [IREdgePair] {
-        let merged = RegionBoolean.perform(.or, region, Region(layer: region.layer))
+    static func selfSpaceCheck(
+        _ region: Region,
+        minSpace: Int32,
+        metric: DRCMetric = .euclidean
+    ) throws -> [IREdgePair] {
+        let merged = try RegionBoolean.perform(.union, region, Region(layer: region.layer))
         let allManhattan = merged.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
 
         if allManhattan && metric == .euclidean {
-            return spaceCheckManhattan(merged, merged, minSpace: minSpace)
+            return try spaceCheckManhattan(merged, merged, minSpace: minSpace)
         }
 
         return selfSpaceCheckGeneral(merged, minSpace: minSpace, metric: metric)
@@ -45,11 +58,16 @@ enum DRCCheck {
     /// Check minimum enclosure of inner region by outer region.
     /// Inner geometry not covered by outer at all is reported as a violation —
     /// it never silently passes.
-    static func enclosureCheck(outer: Region, inner: Region, minEnclosure: Int32, metric: DRCMetric = .euclidean) -> [IREdgePair] {
-        let uncovered = inner.not(outer)
+    static func enclosureCheck(
+        outer: Region,
+        inner: Region,
+        minEnclosure: Int32,
+        metric: DRCMetric = .euclidean
+    ) throws -> [IREdgePair] {
+        let uncovered = try inner.subtracting(outer)
         var violations = uncovered.polygons.compactMap(uncoveredInnerViolation)
 
-        let covered = uncovered.isEmpty ? inner : inner.and(outer)
+        let covered = uncovered.isEmpty ? inner : try inner.intersection(outer)
         if !covered.isEmpty {
             let allManhattan = outer.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
                             && covered.polygons.allSatisfy { PolygonGeometry.isManhattan($0.points) }
@@ -90,16 +108,19 @@ enum DRCCheck {
 
     // MARK: - Manhattan Fast Path
 
-    private static func widthCheckManhattan(_ region: Region, minWidth: Int32) -> [IREdgePair] {
+    private static func widthCheckManhattan(
+        _ region: Region,
+        minWidth: Int32
+    ) throws -> [IREdgePair] {
         // Width must be measured on the union coverage, not on individual
         // polygons: a merged feature is stored as stacked rectangles, and the
         // seam between two stacks would otherwise read as a sliver-thin band.
         var violations = horizontalWidthViolations(
-            RegionBoolean.unionBands(region),
+            try RegionBoolean.unionBands(region),
             minWidth: minWidth
         )
         let transposedViolations = horizontalWidthViolations(
-            RegionBoolean.unionBands(transpose(region)),
+            try RegionBoolean.unionBands(transpose(region)),
             minWidth: minWidth
         ).map(untranspose)
         violations.append(contentsOf: transposedViolations)
@@ -125,7 +146,11 @@ enum DRCCheck {
         return violations
     }
 
-    private static func spaceCheckManhattan(_ a: Region, _ b: Region, minSpace: Int32) -> [IREdgePair] {
+    private static func spaceCheckManhattan(
+        _ a: Region,
+        _ b: Region,
+        minSpace: Int32
+    ) throws -> [IREdgePair] {
         let bandsA = RegionBoolean.decompose(a)
         let bandsB = RegionBoolean.decompose(b)
 
@@ -133,7 +158,7 @@ enum DRCCheck {
         // extents, so band pairs of ONE feature can show a positive gap
         // that other bands of the same metal completely fill. Such a gap
         // is interior — only gaps with actual empty space are spacing.
-        let union = RegionBoolean.perform(.or, a, b)
+        let union = try RegionBoolean.perform(.union, a, b)
         let coverage = GapCoverage(
             bands: RegionBoolean.decompose(union),
             margin: minSpace

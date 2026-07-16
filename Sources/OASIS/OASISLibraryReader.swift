@@ -26,7 +26,6 @@ public enum OASISLibraryReader {
         } catch let error as DatabaseUnitScaleError {
             throw OASISError.invalidUnits(offset: unitOffset, reason: error.localizedDescription)
         }
-        let units = IRUnits(scale: scale)
         let offsetFlag = try reader.readUnsignedInteger()
         if offsetFlag != 0 {
             // Offset tables present: 6 tables x 2 values (type + offset) = 12 values
@@ -60,7 +59,7 @@ public enum OASISLibraryReader {
                     _ = try reader.readUnsignedInteger() // validation-scheme
                 }
                 let name = libraryName.isEmpty ? (cellNames.first ?? "OASIS") : libraryName
-                return IRLibrary(name: name, units: units, cells: cells)
+                return IRLibrary(name: name, databaseUnitScale: scale, cells: cells)
             case .propstring:
                 let name = try reader.readAString()
                 propStrings.append(name)
@@ -121,7 +120,7 @@ public enum OASISLibraryReader {
         }
 
         let name = libraryName.isEmpty ? "OASIS" : libraryName
-        return IRLibrary(name: name, units: units, cells: cells)
+        return IRLibrary(name: name, databaseUnitScale: scale, cells: cells)
     }
 
     // MARK: - Cell Contents
