@@ -8,7 +8,7 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - SpacingTable conversion
 
-    @Test func spacingTableConversion() {
+    @Test func spacingTableConversion() throws {
         let doc = LEFDocument(
             layers: [
                 LEFLayerDef(
@@ -28,7 +28,7 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.layers[0].spacingTable != nil)
         let table = lib.layers[0].spacingTable!
@@ -41,14 +41,14 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Layer with no design rule generated (all nil)
 
-    @Test func layerNoDesignRule() {
+    @Test func layerNoDesignRule() throws {
         let doc = LEFDocument(
             layers: [
                 LEFLayerDef(name: "OVERLAP1", type: .overlap)
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.layers.count == 1)
         #expect(lib.layers[0].type == .overlap)
@@ -58,14 +58,14 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Via with 0 layers
 
-    @Test func viaWithZeroLayers() {
+    @Test func viaWithZeroLayers() throws {
         let doc = LEFDocument(
             vias: [
                 LEFViaDef(name: "EMPTY_VIA", layers: [])
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.vias.count == 1)
         #expect(lib.vias[0].cutLayerName == "")
@@ -75,7 +75,7 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Via with 1 layer
 
-    @Test func viaWithOneLayer() {
+    @Test func viaWithOneLayer() throws {
         let doc = LEFDocument(
             vias: [
                 LEFViaDef(
@@ -87,7 +87,7 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.vias[0].cutLayerName == "VIA1")
         #expect(lib.vias[0].topLayerName == "")
@@ -96,7 +96,7 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Via with cutSize and cutSpacing
 
-    @Test func viaWithCutSizeAndSpacing() {
+    @Test func viaWithCutSizeAndSpacing() throws {
         let doc = LEFDocument(
             vias: [
                 LEFViaDef(
@@ -115,7 +115,7 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
         let via = lib.vias[0]
 
         #expect(via.cutWidth == 0.15)
@@ -128,7 +128,7 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Enclosure rule from CUT layer
 
-    @Test func enclosureRuleFromCutLayer() {
+    @Test func enclosureRuleFromCutLayer() throws {
         let doc = LEFDocument(
             layers: [
                 LEFLayerDef(
@@ -139,7 +139,7 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.enclosureRules.count == 1)
         #expect(lib.enclosureRules[0].minEnclosure == 0.03) // min(0.03, 0.07)
@@ -147,7 +147,7 @@ struct LEFTechIRConverterEdgeCaseTests {
 
     // MARK: - Non-cut layer with enclosure produces no enclosure rule
 
-    @Test func nonCutLayerNoEnclosureRule() {
+    @Test func nonCutLayerNoEnclosureRule() throws {
         let doc = LEFDocument(
             layers: [
                 LEFLayerDef(
@@ -158,20 +158,20 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
         #expect(lib.enclosureRules.isEmpty)
     }
 
     // MARK: - Site with nil siteClass
 
-    @Test func siteWithNilClass() {
+    @Test func siteWithNilClass() throws {
         let doc = LEFDocument(
             sites: [
                 LEFSiteDef(name: "CUSTOM_SITE", width: 0.5, height: 2.0)
             ]
         )
 
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.sites.count == 1)
         #expect(lib.sites[0].siteClass == nil)

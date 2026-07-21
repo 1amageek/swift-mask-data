@@ -27,6 +27,7 @@ public enum LEFLibraryWriter {
         }
 
         for layer in doc.layers {
+            try LEFStrictValidator.validate(layer)
             writeLayer(layer, to: &lines)
             lines.append("")
         }
@@ -121,6 +122,20 @@ public enum LEFLibraryWriter {
         }
         if let tbl = layer.spacingTable {
             writeSpacingTable(tbl, to: &lines)
+        }
+        if let density = layer.minimumDensity {
+            lines.append("  MINIMUMDENSITY \(formatNum(density)) ;")
+        }
+        if let density = layer.maximumDensity {
+            lines.append("  MAXIMUMDENSITY \(formatNum(density)) ;")
+        }
+        if let window = layer.densityCheckWindow {
+            lines.append(
+                "  DENSITYCHECKWINDOW \(formatNum(window.length)) \(formatNum(window.width)) ;"
+            )
+        }
+        if let step = layer.densityCheckStep {
+            lines.append("  DENSITYCHECKSTEP \(formatNum(step)) ;")
         }
         lines.append("END \(layer.name)")
     }

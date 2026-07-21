@@ -37,7 +37,12 @@ public enum DXFLibraryReader {
             throw DXFError.invalidEncoding
         }
 
-        let groups = DXFGroupReader.read(text)
+        let groups = try DXFGroupReader.read(text)
+        try DXFStrictValidator.validate(
+            groups,
+            circleSegments: options.circleSegments,
+            databaseUnitsPerMicrometer: options.databaseUnitScale.databaseUnitsPerMicrometer
+        )
         let dbu = options.databaseUnitScale.databaseUnitsPerMicrometer
         let segments = options.circleSegments
 
@@ -104,7 +109,12 @@ public enum DXFLibraryReader {
                     i += 1
                 }
                 let layer = resolveLayer(polylineProps, layerMap: &layerMap, nextID: &nextLayerID)
-                let closed = polylineProps.first(where: { $0.code == 70 }).flatMap { (Int($0.value) ?? 0) & 1 != 0 } ?? false
+                let closed: Bool
+                if let closedGroup = polylineProps.first(where: { $0.code == 70 }) {
+                    closed = try validatedInt(closedGroup.value) & 1 != 0
+                } else {
+                    closed = false
+                }
 
                 var vertices: [(x: Double, y: Double, bulge: Double)] = []
                 while i < groups.count {
@@ -113,9 +123,9 @@ public enum DXFLibraryReader {
                         var vx = 0.0, vy = 0.0, vbulge = 0.0
                         while i < groups.count && groups[i].code != 0 {
                             switch groups[i].code {
-                            case 10: vx = Double(groups[i].value) ?? 0
-                            case 20: vy = Double(groups[i].value) ?? 0
-                            case 42: vbulge = Double(groups[i].value) ?? 0
+                            case 10: vx = try validatedDouble(groups[i].value)
+                            case 20: vy = try validatedDouble(groups[i].value)
+                            case 42: vbulge = try validatedDouble(groups[i].value)
                             default: break
                             }
                             i += 1
@@ -131,9 +141,14 @@ public enum DXFLibraryReader {
                     }
                 }
 
-                if let element = buildPolylineFromVertices(vertices, closed: closed, layer: layer, dbu: dbu, segments: segments) {
-                    if inBlock { blockElements.append(element) } else { topElements.append(element) }
-                }
+                let element = try buildPolylineFromVertices(
+                    vertices,
+                    closed: closed,
+                    layer: layer,
+                    dbu: dbu,
+                    segments: segments
+                )
+                if inBlock { blockElements.append(element) } else { topElements.append(element) }
                 continue
             }
 
@@ -153,63 +168,60 @@ public enum DXFLibraryReader {
 
                 switch entityType {
                 case "LINE":
-                    if let element = parseLine(props, layer: layer, dbu: dbu) {
+                    if let element = try parseLine(props, layer: layer, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "LWPOLYLINE":
-                    if let element = parseLWPolyline(props, layer: layer, dbu: dbu, segments: segments) {
+                    if let element = try parseLWPolyline(props, layer: layer, dbu: dbu, segments: segments) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "CIRCLE":
-                    if let element = parseCircle(props, layer: layer, dbu: dbu, segments: segments) {
+                    if let element = try parseCircle(props, layer: layer, dbu: dbu, segments: segments) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "ARC":
-                    if let element = parseArc(props, layer: layer, dbu: dbu, segments: segments) {
+                    if let element = try parseArc(props, layer: layer, dbu: dbu, segments: segments) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "ELLIPSE":
-                    if let element = parseEllipse(props, layer: layer, dbu: dbu, segments: segments) {
+                    if let element = try parseEllipse(props, layer: layer, dbu: dbu, segments: segments) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "SPLINE":
-                    if let element = parseSpline(props, layer: layer, dbu: dbu) {
+                    if let element = try parseSpline(props, layer: layer, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "HATCH":
-                    let elements = parseHatch(props, layer: layer, dbu: dbu, segments: segments)
+                    let elements = try parseHatch(props, layer: layer, dbu: dbu, segments: segments)
                     for element in elements {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "TEXT", "MTEXT":
-                    if let element = parseText(props, layer: layer, dbu: dbu) {
+                    if let element = try parseText(props, layer: layer, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "ATTDEF":
-                    if let element = parseAttdef(props, layer: layer, dbu: dbu) {
+                    if let element = try parseAttdef(props, layer: layer, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "INSERT":
-                    if let element = parseInsert(props, dbu: dbu) {
+                    if let element = try parseInsert(props, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
 
                 case "SOLID":
-                    if let element = parseSolid(props, layer: layer, dbu: dbu) {
+                    if let element = try parseSolid(props, layer: layer, dbu: dbu) {
                         if inBlock { blockElements.append(element) } else { topElements.append(element) }
                     }
-
-                case "POINT":
-                    break // No geometry representation
 
                 default:
                     break
@@ -233,14 +245,14 @@ public enum DXFLibraryReader {
 
     // MARK: - Entity Parsers
 
-    private static func parseLine(_ props: [DXFGroup], layer: Int16, dbu: Double) -> IRElement? {
+    private static func parseLine(_ props: [DXFGroup], layer: Int16, dbu: Double) throws -> IRElement? {
         var x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0
         for p in props {
             switch p.code {
-            case 10: x1 = Double(p.value) ?? 0
-            case 20: y1 = Double(p.value) ?? 0
-            case 11: x2 = Double(p.value) ?? 0
-            case 21: y2 = Double(p.value) ?? 0
+            case 10: x1 = try validatedDouble(p.value)
+            case 20: y1 = try validatedDouble(p.value)
+            case 11: x2 = try validatedDouble(p.value)
+            case 21: y2 = try validatedDouble(p.value)
             default: break
             }
         }
@@ -248,14 +260,19 @@ public enum DXFLibraryReader {
             layer: layer, datatype: 0,
             pathType: .flush, width: 0,
             points: [
-                IRPoint(x: Int32(x1 * dbu), y: Int32(y1 * dbu)),
-                IRPoint(x: Int32(x2 * dbu), y: Int32(y2 * dbu)),
+                try DXFCoordinate.point(x: x1, y: y1, databaseUnitsPerMicrometer: dbu, entity: "LINE"),
+                try DXFCoordinate.point(x: x2, y: y2, databaseUnitsPerMicrometer: dbu, entity: "LINE"),
             ],
             properties: []
         ))
     }
 
-    private static func parseLWPolyline(_ props: [DXFGroup], layer: Int16, dbu: Double, segments: Int) -> IRElement? {
+    private static func parseLWPolyline(
+        _ props: [DXFGroup],
+        layer: Int16,
+        dbu: Double,
+        segments: Int
+    ) throws -> IRElement? {
         var xs: [Double] = []
         var ys: [Double] = []
         var bulges: [Double] = []
@@ -264,14 +281,14 @@ public enum DXFLibraryReader {
         for p in props {
             switch p.code {
             case 10:
-                xs.append(Double(p.value) ?? 0)
+                xs.append(try validatedDouble(p.value))
                 // Ensure bulge array stays in sync: each vertex gets a bulge
                 if bulges.count < xs.count - 1 {
                     bulges.append(0)
                 }
-            case 20: ys.append(Double(p.value) ?? 0)
-            case 42: bulges.append(Double(p.value) ?? 0)
-            case 70: closed = (Int(p.value) ?? 0) & 1 != 0
+            case 20: ys.append(try validatedDouble(p.value))
+            case 42: bulges.append(try validatedDouble(p.value))
+            case 70: closed = (try validatedInt(p.value)) & 1 != 0
             default: break
             }
         }
@@ -282,7 +299,9 @@ public enum DXFLibraryReader {
         }
 
         let count = min(xs.count, ys.count)
-        guard count >= 2 else { return nil }
+        guard count >= 2 else {
+            throw DXFError.invalidGeometry("LWPOLYLINE requires at least two complete vertices")
+        }
 
         let hasBulge = bulges.contains(where: { $0 != 0 })
 
@@ -292,11 +311,22 @@ public enum DXFLibraryReader {
             for idx in 0..<count {
                 vertices.append((xs[idx], ys[idx], bulges[idx]))
             }
-            return buildPolylineFromVertices(vertices, closed: closed, layer: layer, dbu: dbu, segments: segments)
+            return try buildPolylineFromVertices(
+                vertices,
+                closed: closed,
+                layer: layer,
+                dbu: dbu,
+                segments: segments
+            )
         }
 
-        var points = (0..<count).map { idx in
-            IRPoint(x: Int32(xs[idx] * dbu), y: Int32(ys[idx] * dbu))
+        var points = try (0..<count).map { idx in
+            try DXFCoordinate.point(
+                x: xs[idx],
+                y: ys[idx],
+                databaseUnitsPerMicrometer: dbu,
+                entity: "LWPOLYLINE"
+            )
         }
 
         if closed {
@@ -309,46 +339,56 @@ public enum DXFLibraryReader {
         }
     }
 
-    private static func parseCircle(_ props: [DXFGroup], layer: Int16, dbu: Double, segments: Int) -> IRElement? {
+    private static func parseCircle(
+        _ props: [DXFGroup],
+        layer: Int16,
+        dbu: Double,
+        segments: Int
+    ) throws -> IRElement? {
         var cx = 0.0, cy = 0.0, radius = 0.0
         for p in props {
             switch p.code {
-            case 10: cx = Double(p.value) ?? 0
-            case 20: cy = Double(p.value) ?? 0
-            case 40: radius = Double(p.value) ?? 0
+            case 10: cx = try validatedDouble(p.value)
+            case 20: cy = try validatedDouble(p.value)
+            case 40: radius = try validatedDouble(p.value)
             default: break
             }
         }
 
-        guard radius > 0 else { return nil }
+        guard radius > 0 else { throw DXFError.invalidGeometry("CIRCLE radius must be positive") }
 
-        let points = DXFArcGeometry.approximateCircle(cx: cx, cy: cy, radius: radius, segments: segments, dbu: dbu)
-        guard points.count >= 3 else { return nil }
+        let points = try DXFArcGeometry.approximateCircle(cx: cx, cy: cy, radius: radius, segments: segments, dbu: dbu)
+        guard points.count >= 3 else { throw DXFError.invalidGeometry("CIRCLE approximation is empty") }
         return .boundary(IRBoundary(layer: layer, datatype: 0, points: points, properties: []))
     }
 
-    private static func parseArc(_ props: [DXFGroup], layer: Int16, dbu: Double, segments: Int) -> IRElement? {
+    private static func parseArc(
+        _ props: [DXFGroup],
+        layer: Int16,
+        dbu: Double,
+        segments: Int
+    ) throws -> IRElement? {
         var cx = 0.0, cy = 0.0, radius = 0.0
         var startAngle = 0.0, endAngle = 360.0
         for p in props {
             switch p.code {
-            case 10: cx = Double(p.value) ?? 0
-            case 20: cy = Double(p.value) ?? 0
-            case 40: radius = Double(p.value) ?? 0
-            case 50: startAngle = Double(p.value) ?? 0
-            case 51: endAngle = Double(p.value) ?? 360
+            case 10: cx = try validatedDouble(p.value)
+            case 20: cy = try validatedDouble(p.value)
+            case 40: radius = try validatedDouble(p.value)
+            case 50: startAngle = try validatedDouble(p.value)
+            case 51: endAngle = try validatedDouble(p.value)
             default: break
             }
         }
 
-        guard radius > 0 else { return nil }
+        guard radius > 0 else { throw DXFError.invalidGeometry("ARC radius must be positive") }
 
-        let points = DXFArcGeometry.approximateArc(
+        let points = try DXFArcGeometry.approximateArc(
             cx: cx, cy: cy, radius: radius,
             startAngleDeg: startAngle, endAngleDeg: endAngle,
             segments: segments, dbu: dbu
         )
-        guard points.count >= 2 else { return nil }
+        guard points.count >= 2 else { throw DXFError.invalidGeometry("ARC approximation is empty") }
         return .path(IRPath(
             layer: layer, datatype: 0,
             pathType: .flush, width: 0,
@@ -356,7 +396,12 @@ public enum DXFLibraryReader {
         ))
     }
 
-    private static func parseEllipse(_ props: [DXFGroup], layer: Int16, dbu: Double, segments: Int) -> IRElement? {
+    private static func parseEllipse(
+        _ props: [DXFGroup],
+        layer: Int16,
+        dbu: Double,
+        segments: Int
+    ) throws -> IRElement? {
         var cx = 0.0, cy = 0.0
         var majorDx = 0.0, majorDy = 0.0
         var ratio = 1.0
@@ -364,28 +409,30 @@ public enum DXFLibraryReader {
 
         for p in props {
             switch p.code {
-            case 10: cx = Double(p.value) ?? 0
-            case 20: cy = Double(p.value) ?? 0
-            case 11: majorDx = Double(p.value) ?? 0
-            case 21: majorDy = Double(p.value) ?? 0
-            case 40: ratio = Double(p.value) ?? 1
-            case 41: startParam = Double(p.value) ?? 0
-            case 42: endParam = Double(p.value) ?? (2.0 * .pi)
+            case 10: cx = try validatedDouble(p.value)
+            case 20: cy = try validatedDouble(p.value)
+            case 11: majorDx = try validatedDouble(p.value)
+            case 21: majorDy = try validatedDouble(p.value)
+            case 40: ratio = try validatedDouble(p.value)
+            case 41: startParam = try validatedDouble(p.value)
+            case 42: endParam = try validatedDouble(p.value)
             default: break
             }
         }
 
         let majorLen = (majorDx * majorDx + majorDy * majorDy).squareRoot()
-        guard majorLen > 0 else { return nil }
+        guard majorLen.isFinite, majorLen > 0 else {
+            throw DXFError.invalidGeometry("ELLIPSE major axis must be finite and nonzero")
+        }
 
-        let points = DXFArcGeometry.approximateEllipse(
+        let points = try DXFArcGeometry.approximateEllipse(
             cx: cx, cy: cy,
             majorDx: majorDx, majorDy: majorDy,
             ratio: ratio,
             startParam: startParam, endParam: endParam,
             segments: segments, dbu: dbu
         )
-        guard points.count >= 2 else { return nil }
+        guard points.count >= 2 else { throw DXFError.invalidGeometry("ELLIPSE approximation is empty") }
 
         let sweep = endParam - startParam
         let isFull = abs(sweep - 2.0 * .pi) < 0.001 || abs(sweep) < 0.001
@@ -396,7 +443,7 @@ public enum DXFLibraryReader {
         }
     }
 
-    private static func parseSpline(_ props: [DXFGroup], layer: Int16, dbu: Double) -> IRElement? {
+    private static func parseSpline(_ props: [DXFGroup], layer: Int16, dbu: Double) throws -> IRElement? {
         // Read fit points (group codes 11/21) and control points (10/20)
         var fitXs: [Double] = []
         var fitYs: [Double] = []
@@ -406,11 +453,11 @@ public enum DXFLibraryReader {
 
         for p in props {
             switch p.code {
-            case 10: ctrlXs.append(Double(p.value) ?? 0)
-            case 20: ctrlYs.append(Double(p.value) ?? 0)
-            case 11: fitXs.append(Double(p.value) ?? 0)
-            case 21: fitYs.append(Double(p.value) ?? 0)
-            case 70: closed = (Int(p.value) ?? 0) & 1 != 0
+            case 10: ctrlXs.append(try validatedDouble(p.value))
+            case 20: ctrlYs.append(try validatedDouble(p.value))
+            case 11: fitXs.append(try validatedDouble(p.value))
+            case 21: fitYs.append(try validatedDouble(p.value))
+            case 70: closed = (try validatedInt(p.value)) & 1 != 0
             default: break
             }
         }
@@ -427,24 +474,34 @@ public enum DXFLibraryReader {
         }
 
         let count = min(xs.count, ys.count)
-        guard count >= 2 else { return nil }
+        guard count >= 2 else { throw DXFError.invalidGeometry("SPLINE requires at least two complete points") }
 
-        var points = (0..<count).map { idx in
-            IRPoint(x: Int32(xs[idx] * dbu), y: Int32(ys[idx] * dbu))
+        var points = try (0..<count).map { idx in
+            try DXFCoordinate.point(
+                x: xs[idx],
+                y: ys[idx],
+                databaseUnitsPerMicrometer: dbu,
+                entity: "SPLINE"
+            )
         }
 
         if closed {
             if points.first != points.last {
                 points.append(points[0])
             }
-            guard points.count >= 4 else { return nil }
+            guard points.count >= 4 else { throw DXFError.invalidGeometry("closed SPLINE requires at least three distinct points") }
             return .boundary(IRBoundary(layer: layer, datatype: 0, points: points, properties: []))
         } else {
             return .path(IRPath(layer: layer, datatype: 0, pathType: .flush, width: 0, points: points, properties: []))
         }
     }
 
-    private static func parseHatch(_ props: [DXFGroup], layer: Int16, dbu: Double, segments: Int) -> [IRElement] {
+    private static func parseHatch(
+        _ props: [DXFGroup],
+        layer: Int16,
+        dbu: Double,
+        segments: Int
+    ) throws -> [IRElement] {
         // HATCH has boundary loops. We extract the boundary path coordinates.
         // Group 91 = number of boundary paths
         // Group 92 = boundary path type (bit flags)
@@ -458,7 +515,7 @@ public enum DXFLibraryReader {
         while idx < props.count {
             // Look for boundary path type marker (group 92)
             if props[idx].code == 92 {
-                let pathType = Int(props[idx].value) ?? 0
+                let pathType = try validatedInt(props[idx].value)
                 idx += 1
 
                 if pathType & 2 != 0 {
@@ -469,21 +526,21 @@ public enum DXFLibraryReader {
 
                     while idx < props.count && props[idx].code != 92 && props[idx].code != 75 && props[idx].code != 76 {
                         if props[idx].code == 72 {
-                            hasBulge = (Int(props[idx].value) ?? 0) != 0
+                            hasBulge = (try validatedInt(props[idx].value)) != 0
                             idx += 1
                         } else if props[idx].code == 73 {
-                            isClosed = (Int(props[idx].value) ?? 0) != 0
+                            isClosed = (try validatedInt(props[idx].value)) != 0
                             idx += 1
                         } else if props[idx].code == 93 {
                             idx += 1 // number of vertices, just skip
                         } else if props[idx].code == 10 {
-                            let vx = Double(props[idx].value) ?? 0
+                            let vx = try validatedDouble(props[idx].value)
                             idx += 1
-                            let vy = idx < props.count && props[idx].code == 20 ? Double(props[idx].value) ?? 0 : 0
+                            let vy = idx < props.count && props[idx].code == 20 ? try validatedDouble(props[idx].value) : 0
                             if idx < props.count && props[idx].code == 20 { idx += 1 }
                             var vbulge = 0.0
                             if hasBulge, idx < props.count, props[idx].code == 42 {
-                                vbulge = Double(props[idx].value) ?? 0
+                                vbulge = try validatedDouble(props[idx].value)
                                 idx += 1
                             }
                             vertices.append((vx, vy, vbulge))
@@ -492,23 +549,28 @@ public enum DXFLibraryReader {
                         }
                     }
 
-                    if vertices.count >= 3 {
-                        if let elem = buildPolylineFromVertices(vertices, closed: isClosed, layer: layer, dbu: dbu, segments: segments) {
-                            elements.append(elem)
-                        }
+                    guard vertices.count >= 3 else {
+                        throw DXFError.invalidGeometry("HATCH polyline boundary requires at least three vertices")
                     }
+                    elements.append(try buildPolylineFromVertices(
+                        vertices,
+                        closed: isClosed,
+                        layer: layer,
+                        dbu: dbu,
+                        segments: segments
+                    ))
                 } else {
                     // Edge boundary
                     var edgeCount = 0
                     if idx < props.count && props[idx].code == 93 {
-                        edgeCount = Int(props[idx].value) ?? 0
+                        edgeCount = try validatedInt(props[idx].value)
                         idx += 1
                     }
 
                     var points: [IRPoint] = []
                     for _ in 0..<edgeCount {
                         guard idx < props.count, props[idx].code == 72 else { break }
-                        let edgeType = Int(props[idx].value) ?? 0
+                        let edgeType = try validatedInt(props[idx].value)
                         idx += 1
 
                         switch edgeType {
@@ -516,37 +578,53 @@ public enum DXFLibraryReader {
                             var x1 = 0.0, y1 = 0.0, x2 = 0.0, y2 = 0.0
                             while idx < props.count && props[idx].code != 72 && props[idx].code != 92 && props[idx].code != 75 && props[idx].code != 97 {
                                 switch props[idx].code {
-                                case 10: x1 = Double(props[idx].value) ?? 0
-                                case 20: y1 = Double(props[idx].value) ?? 0
-                                case 11: x2 = Double(props[idx].value) ?? 0
-                                case 21: y2 = Double(props[idx].value) ?? 0
+                                case 10: x1 = try validatedDouble(props[idx].value)
+                                case 20: y1 = try validatedDouble(props[idx].value)
+                                case 11: x2 = try validatedDouble(props[idx].value)
+                                case 21: y2 = try validatedDouble(props[idx].value)
                                 default: break
                                 }
                                 idx += 1
                             }
                             if points.isEmpty {
-                                points.append(IRPoint(x: Int32(x1 * dbu), y: Int32(y1 * dbu)))
+                                points.append(try DXFCoordinate.point(
+                                    x: x1,
+                                    y: y1,
+                                    databaseUnitsPerMicrometer: dbu,
+                                    entity: "HATCH"
+                                ))
                             }
-                            points.append(IRPoint(x: Int32(x2 * dbu), y: Int32(y2 * dbu)))
+                            points.append(try DXFCoordinate.point(
+                                x: x2,
+                                y: y2,
+                                databaseUnitsPerMicrometer: dbu,
+                                entity: "HATCH"
+                            ))
 
                         case 2: // Circular arc
                             var cx = 0.0, cy = 0.0, r = 0.0, sa = 0.0, ea = 360.0
+                            var isCounterclockwise = true
                             while idx < props.count && props[idx].code != 72 && props[idx].code != 92 && props[idx].code != 75 && props[idx].code != 97 {
                                 switch props[idx].code {
-                                case 10: cx = Double(props[idx].value) ?? 0
-                                case 20: cy = Double(props[idx].value) ?? 0
-                                case 40: r = Double(props[idx].value) ?? 0
-                                case 50: sa = Double(props[idx].value) ?? 0
-                                case 51: ea = Double(props[idx].value) ?? 360
+                                case 10: cx = try validatedDouble(props[idx].value)
+                                case 20: cy = try validatedDouble(props[idx].value)
+                                case 40: r = try validatedDouble(props[idx].value)
+                                case 50: sa = try validatedDouble(props[idx].value)
+                                case 51: ea = try validatedDouble(props[idx].value)
+                                case 73: isCounterclockwise = try validatedInt(props[idx].value) != 0
                                 default: break
                                 }
                                 idx += 1
                             }
-                            let arcPts = DXFArcGeometry.approximateArc(
+                            var arcPts = try DXFArcGeometry.approximateArc(
                                 cx: cx, cy: cy, radius: r,
-                                startAngleDeg: sa, endAngleDeg: ea,
+                                startAngleDeg: isCounterclockwise ? sa : ea,
+                                endAngleDeg: isCounterclockwise ? ea : sa,
                                 segments: segments, dbu: dbu
                             )
+                            if !isCounterclockwise {
+                                arcPts.reverse()
+                            }
                             for (ptIdx, pt) in arcPts.enumerated() {
                                 if ptIdx == 0 && !points.isEmpty { continue }
                                 points.append(pt)
@@ -555,62 +633,69 @@ public enum DXFLibraryReader {
                         case 3: // Elliptical arc
                             var ecx = 0.0, ecy = 0.0, emx = 0.0, emy = 0.0
                             var eRatio = 1.0, esp = 0.0, eep = 2.0 * .pi
+                            var isCounterclockwise = true
                             while idx < props.count && props[idx].code != 72 && props[idx].code != 92 && props[idx].code != 75 && props[idx].code != 97 {
                                 switch props[idx].code {
-                                case 10: ecx = Double(props[idx].value) ?? 0
-                                case 20: ecy = Double(props[idx].value) ?? 0
-                                case 11: emx = Double(props[idx].value) ?? 0
-                                case 21: emy = Double(props[idx].value) ?? 0
-                                case 40: eRatio = Double(props[idx].value) ?? 1
-                                case 50: esp = (Double(props[idx].value) ?? 0) * .pi / 180.0
-                                case 51: eep = (Double(props[idx].value) ?? 360.0) * .pi / 180.0
+                                case 10: ecx = try validatedDouble(props[idx].value)
+                                case 20: ecy = try validatedDouble(props[idx].value)
+                                case 11: emx = try validatedDouble(props[idx].value)
+                                case 21: emy = try validatedDouble(props[idx].value)
+                                case 40: eRatio = try validatedDouble(props[idx].value)
+                                case 50: esp = (try validatedDouble(props[idx].value)) / 180.0 * .pi
+                                case 51: eep = (try validatedDouble(props[idx].value)) / 180.0 * .pi
+                                case 73: isCounterclockwise = try validatedInt(props[idx].value) != 0
                                 default: break
                                 }
                                 idx += 1
                             }
-                            let ellPts = DXFArcGeometry.approximateEllipse(
+                            var ellPts = try DXFArcGeometry.approximateEllipse(
                                 cx: ecx, cy: ecy,
                                 majorDx: emx, majorDy: emy,
                                 ratio: eRatio,
-                                startParam: esp, endParam: eep,
+                                startParam: isCounterclockwise ? esp : eep,
+                                endParam: isCounterclockwise ? eep : esp,
                                 segments: segments, dbu: dbu
                             )
+                            if !isCounterclockwise {
+                                ellPts.reverse()
+                            }
                             for (ptIdx, pt) in ellPts.enumerated() {
                                 if ptIdx == 0 && !points.isEmpty { continue }
                                 points.append(pt)
                             }
 
                         default:
-                            // Skip unknown edge type
-                            while idx < props.count && props[idx].code != 72 && props[idx].code != 92 && props[idx].code != 75 && props[idx].code != 97 {
-                                idx += 1
-                            }
+                            throw DXFError.unsupportedEntity("HATCH edge type \(edgeType)")
                         }
                     }
 
-                    if points.count >= 3 {
-                        if points.first != points.last {
-                            points.append(points[0])
-                        }
-                        elements.append(.boundary(IRBoundary(
-                            layer: layer, datatype: 0, points: points, properties: []
-                        )))
+                    guard points.count >= 3 else {
+                        throw DXFError.invalidGeometry("HATCH edge boundary requires at least three points")
                     }
+                    if points.first != points.last {
+                        points.append(points[0])
+                    }
+                    elements.append(.boundary(IRBoundary(
+                        layer: layer, datatype: 0, points: points, properties: []
+                    )))
                 }
             } else {
                 idx += 1
             }
         }
 
+        guard !elements.isEmpty else {
+            throw DXFError.invalidGeometry("HATCH contains no representable boundary")
+        }
         return elements
     }
 
-    private static func parseText(_ props: [DXFGroup], layer: Int16, dbu: Double) -> IRElement? {
+    private static func parseText(_ props: [DXFGroup], layer: Int16, dbu: Double) throws -> IRElement? {
         var x = 0.0, y = 0.0, text = ""
         for p in props {
             switch p.code {
-            case 10: x = Double(p.value) ?? 0
-            case 20: y = Double(p.value) ?? 0
+            case 10: x = try validatedDouble(p.value)
+            case 20: y = try validatedDouble(p.value)
             case 1: text = p.value
             default: break
             }
@@ -619,17 +704,22 @@ public enum DXFLibraryReader {
         return .text(IRText(
             layer: layer, texttype: 0,
             transform: .identity,
-            position: IRPoint(x: Int32(x * dbu), y: Int32(y * dbu)),
+            position: try DXFCoordinate.point(
+                x: x,
+                y: y,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "TEXT"
+            ),
             string: text, properties: []
         ))
     }
 
-    private static func parseAttdef(_ props: [DXFGroup], layer: Int16, dbu: Double) -> IRElement? {
+    private static func parseAttdef(_ props: [DXFGroup], layer: Int16, dbu: Double) throws -> IRElement? {
         var x = 0.0, y = 0.0, tag = "", defaultVal = ""
         for p in props {
             switch p.code {
-            case 10: x = Double(p.value) ?? 0
-            case 20: y = Double(p.value) ?? 0
+            case 10: x = try validatedDouble(p.value)
+            case 20: y = try validatedDouble(p.value)
             case 2: tag = p.value
             case 1: defaultVal = p.value
             default: break
@@ -640,12 +730,17 @@ public enum DXFLibraryReader {
         return .text(IRText(
             layer: layer, texttype: 0,
             transform: .identity,
-            position: IRPoint(x: Int32(x * dbu), y: Int32(y * dbu)),
+            position: try DXFCoordinate.point(
+                x: x,
+                y: y,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "ATTDEF"
+            ),
             string: text, properties: []
         ))
     }
 
-    private static func parseInsert(_ props: [DXFGroup], dbu: Double) -> IRElement? {
+    private static func parseInsert(_ props: [DXFGroup], dbu: Double) throws -> IRElement? {
         var blockName = "", x = 0.0, y = 0.0
         var scaleX = 1.0, scaleY = 1.0
         var rotation = 0.0
@@ -655,35 +750,39 @@ public enum DXFLibraryReader {
         for p in props {
             switch p.code {
             case 2: blockName = p.value
-            case 10: x = Double(p.value) ?? 0
-            case 20: y = Double(p.value) ?? 0
-            case 41: scaleX = Double(p.value) ?? 1
-            case 42: scaleY = Double(p.value) ?? 1
-            case 50: rotation = Double(p.value) ?? 0
-            case 70: cols = Int16(Int(p.value) ?? 1)
-            case 71: rows = Int16(Int(p.value) ?? 1)
-            case 44: colSpacing = Double(p.value) ?? 0
-            case 45: rowSpacing = Double(p.value) ?? 0
+            case 10: x = try validatedDouble(p.value)
+            case 20: y = try validatedDouble(p.value)
+            case 41: scaleX = try validatedDouble(p.value)
+            case 42: scaleY = try validatedDouble(p.value)
+            case 50: rotation = try validatedDouble(p.value)
+            case 70: cols = Int16(try validatedInt(p.value))
+            case 71: rows = Int16(try validatedInt(p.value))
+            case 44: colSpacing = try validatedDouble(p.value)
+            case 45: rowSpacing = try validatedDouble(p.value)
             default: break
             }
         }
 
         guard !blockName.isEmpty else { return nil }
 
-        let origin = IRPoint(x: Int32(x * dbu), y: Int32(y * dbu))
+        let origin = try DXFCoordinate.point(
+            x: x,
+            y: y,
+            databaseUnitsPerMicrometer: dbu,
+            entity: "INSERT"
+        )
 
         // Determine if mirrored: negative X scale means mirror
         let mirrorX = scaleX < 0
         let absX = abs(scaleX)
         let absY = abs(scaleY)
-        let mag: Double
-        if abs(absX - absY) < 1e-9 {
-            mag = absX // Uniform scaling
-        } else {
-            // Non-uniform scaling: IRTransform doesn't support this.
-            // Use geometric mean as best approximation.
-            mag = (absX * absY).squareRoot()
+        guard scaleY > 0, abs(absX - absY) < 1e-9 else {
+            throw DXFError.unsupportedTransform(
+                entity: "INSERT",
+                reason: "non-uniform or Y-axis mirrored scale"
+            )
         }
+        let mag = absX
         let isIdentityMag = abs(mag - 1.0) < 1e-9
         let isIdentityRot = abs(rotation) < 1e-9
         let isIdentityScale = isIdentityMag && abs(absY - absX) < 1e-9
@@ -701,11 +800,17 @@ public enum DXFLibraryReader {
 
         // Array insert
         if cols > 1 || rows > 1 {
-            let colDist = Int32(colSpacing * dbu)
-            let rowDist = Int32(rowSpacing * dbu)
+            let colDist = try DXFCoordinate.scaled(colSpacing, by: dbu, entity: "INSERT")
+            let rowDist = try DXFCoordinate.scaled(rowSpacing, by: dbu, entity: "INSERT")
             // Reference points: [origin, col-end, row-end]
-            let colEnd = IRPoint(x: origin.x + Int32(cols) * colDist, y: origin.y)
-            let rowEnd = IRPoint(x: origin.x, y: origin.y + Int32(rows) * rowDist)
+            let colEnd = IRPoint(
+                x: try DXFCoordinate.adding(origin.x, count: Int(cols), spacing: colDist, entity: "INSERT"),
+                y: origin.y
+            )
+            let rowEnd = IRPoint(
+                x: origin.x,
+                y: try DXFCoordinate.adding(origin.y, count: Int(rows), spacing: rowDist, entity: "INSERT")
+            )
             return .arrayRef(IRArrayRef(
                 cellName: blockName,
                 transform: transform,
@@ -724,7 +829,7 @@ public enum DXFLibraryReader {
         ))
     }
 
-    private static func parseSolid(_ props: [DXFGroup], layer: Int16, dbu: Double) -> IRElement? {
+    private static func parseSolid(_ props: [DXFGroup], layer: Int16, dbu: Double) throws -> IRElement? {
         // SOLID has 3 or 4 corner points: (10,20), (11,21), (12,22), (13,23)
         var x0 = 0.0, y0 = 0.0, x1 = 0.0, y1 = 0.0
         var x2 = 0.0, y2 = 0.0, x3 = 0.0, y3 = 0.0
@@ -732,32 +837,32 @@ public enum DXFLibraryReader {
 
         for p in props {
             switch p.code {
-            case 10: x0 = Double(p.value) ?? 0
-            case 20: y0 = Double(p.value) ?? 0
-            case 11: x1 = Double(p.value) ?? 0
-            case 21: y1 = Double(p.value) ?? 0
-            case 12: x2 = Double(p.value) ?? 0
-            case 22: y2 = Double(p.value) ?? 0
-            case 13: x3 = Double(p.value) ?? 0; hasP3 = true
-            case 23: y3 = Double(p.value) ?? 0
+            case 10: x0 = try validatedDouble(p.value)
+            case 20: y0 = try validatedDouble(p.value)
+            case 11: x1 = try validatedDouble(p.value)
+            case 21: y1 = try validatedDouble(p.value)
+            case 12: x2 = try validatedDouble(p.value)
+            case 22: y2 = try validatedDouble(p.value)
+            case 13: x3 = try validatedDouble(p.value); hasP3 = true
+            case 23: y3 = try validatedDouble(p.value)
             default: break
             }
         }
 
         // DXF SOLID vertex order: 0, 1, 3, 2 (note: swapped 2 and 3)
         var points = [
-            IRPoint(x: Int32(x0 * dbu), y: Int32(y0 * dbu)),
-            IRPoint(x: Int32(x1 * dbu), y: Int32(y1 * dbu)),
-            IRPoint(x: Int32(x3 * dbu), y: Int32(y3 * dbu)),
-            IRPoint(x: Int32(x2 * dbu), y: Int32(y2 * dbu)),
+            try DXFCoordinate.point(x: x0, y: y0, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
+            try DXFCoordinate.point(x: x1, y: y1, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
+            try DXFCoordinate.point(x: x3, y: y3, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
+            try DXFCoordinate.point(x: x2, y: y2, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
         ]
 
         // If point 3 == point 2, it's a triangle
         if !hasP3 || (x3 == x2 && y3 == y2) {
             points = [
-                IRPoint(x: Int32(x0 * dbu), y: Int32(y0 * dbu)),
-                IRPoint(x: Int32(x1 * dbu), y: Int32(y1 * dbu)),
-                IRPoint(x: Int32(x2 * dbu), y: Int32(y2 * dbu)),
+                try DXFCoordinate.point(x: x0, y: y0, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
+                try DXFCoordinate.point(x: x1, y: y1, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
+                try DXFCoordinate.point(x: x2, y: y2, databaseUnitsPerMicrometer: dbu, entity: "SOLID"),
             ]
         }
 
@@ -773,20 +878,27 @@ public enum DXFLibraryReader {
         layer: Int16,
         dbu: Double,
         segments: Int
-    ) -> IRElement? {
-        guard vertices.count >= 2 else { return nil }
+    ) throws -> IRElement {
+        guard vertices.count >= 2 else {
+            throw DXFError.invalidGeometry("POLYLINE requires at least two complete vertices")
+        }
 
         var points: [IRPoint] = []
         let totalVertices = closed ? vertices.count : vertices.count - 1
 
         for idx in 0..<totalVertices {
             let v = vertices[idx]
-            points.append(IRPoint(x: Int32(v.x * dbu), y: Int32(v.y * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: v.x,
+                y: v.y,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "POLYLINE"
+            ))
 
             if v.bulge != 0 {
                 let nextIdx = (idx + 1) % vertices.count
                 let next = vertices[nextIdx]
-                let arcPts = DXFArcGeometry.bulgeToArcPoints(
+                let arcPts = try DXFArcGeometry.bulgeToArcPoints(
                     from: (v.x, v.y),
                     to: (next.x, next.y),
                     bulge: v.bulge,
@@ -800,22 +912,47 @@ public enum DXFLibraryReader {
         // Add last vertex for open polylines
         if !closed {
             let last = vertices[vertices.count - 1]
-            points.append(IRPoint(x: Int32(last.x * dbu), y: Int32(last.y * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: last.x,
+                y: last.y,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "POLYLINE"
+            ))
         }
 
         if closed {
             if points.first != points.last {
                 points.append(points[0])
             }
-            guard points.count >= 4 else { return nil }
+            guard points.count >= 4 else {
+                throw DXFError.invalidGeometry("closed POLYLINE requires at least three distinct points")
+            }
             return .boundary(IRBoundary(layer: layer, datatype: 0, points: points, properties: []))
         } else {
-            guard points.count >= 2 else { return nil }
+            guard points.count >= 2 else {
+                throw DXFError.invalidGeometry("POLYLINE requires at least two points")
+            }
             return .path(IRPath(layer: layer, datatype: 0, pathType: .flush, width: 0, points: points, properties: []))
         }
     }
 
     // MARK: - Helpers
+
+    /// Numeric syntax is checked by DXFStrictValidator before entity parsing.
+    private static func validatedDouble(_ value: String) throws -> Double {
+        guard let number = Double(value) else {
+            throw DXFError.invalidStructure("DXF numeric validation invariant was violated")
+        }
+        return number
+    }
+
+    /// Integer syntax is checked by DXFStrictValidator before entity parsing.
+    private static func validatedInt(_ value: String) throws -> Int {
+        guard let number = Int(value) else {
+            throw DXFError.invalidStructure("DXF integer validation invariant was violated")
+        }
+        return number
+    }
 
     private static func resolveLayer(_ props: [DXFGroup], layerMap: inout [String: Int16], nextID: inout Int16) -> Int16 {
         for p in props {

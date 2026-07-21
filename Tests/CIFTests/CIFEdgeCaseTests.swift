@@ -6,35 +6,33 @@ import LayoutIR
 @Suite("CIF Tokenizer Edge Cases")
 struct CIFTokenizerEdgeCaseTests {
 
-    @Test func nestedComments() {
-        let tokens = CIFTokenizer.tokenize("(outer (inner) outer) L 1;")
+    @Test func nestedComments() throws {
+        let tokens = try CIFTokenizer.tokenize("(outer (inner) outer) L 1;")
         #expect(tokens.count == 1)
         #expect(tokens[0] == "L 1")
     }
 
     @Test func unmatchedOpenComment() {
-        // Unmatched '(' should swallow everything after it
-        let tokens = CIFTokenizer.tokenize("L 1; (unmatched B 100;")
-        #expect(tokens.count == 1)
-        #expect(tokens[0] == "L 1")
+        #expect(throws: CIFError.unterminatedComment) {
+            _ = try CIFTokenizer.tokenize("L 1; (unmatched B 100;")
+        }
     }
 
-    @Test func extraWhitespace() {
-        let tokens = CIFTokenizer.tokenize("  DS   1   100  ;  ")
+    @Test func extraWhitespace() throws {
+        let tokens = try CIFTokenizer.tokenize("  DS   1   100  ;  ")
         #expect(tokens.count == 1)
         #expect(tokens[0] == "DS   1   100")
     }
 
-    @Test func consecutiveSemicolons() {
-        let tokens = CIFTokenizer.tokenize(";;;")
+    @Test func consecutiveSemicolons() throws {
+        let tokens = try CIFTokenizer.tokenize(";;;")
         #expect(tokens.isEmpty)
     }
 
     @Test func noSemicolonAtEnd() {
-        // Command without trailing semicolon
-        let tokens = CIFTokenizer.tokenize("L 1")
-        #expect(tokens.count == 1)
-        #expect(tokens[0] == "L 1")
+        #expect(throws: CIFError.unterminatedCommand("L 1")) {
+            _ = try CIFTokenizer.tokenize("L 1")
+        }
     }
 }
 
@@ -52,47 +50,45 @@ struct CIFReaderEdgeCaseTests {
     }
 
     @Test func unterminatedCell() throws {
-        // DS without matching DF
-        let cif = "DS 1 1; L 1; B 100 50 50 25"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        // Should still produce a cell (unterminated is handled gracefully)
-        #expect(lib.cells.count == 1)
-        #expect(lib.cells[0].elements.count == 1)
+        let cif = "DS 1 1; L 1; B 100 50 50 25; E"
+        #expect(throws: CIFError.unterminatedCell("CELL_1")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
+    }
+
+    @Test func missingEndCommand() throws {
+        let cif = "DS 1 1; L 1; B 100 50 50 25; DF;"
+        #expect(throws: CIFError.missingEndCommand) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
     }
 
     @Test func scaleFactorZero() throws {
-        // DS n 0 → division by zero guard
         let cif = "DS 1 0; L 1; B 100 50 50 25; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        #expect(lib.cells.count == 1)
-        // Scale should default to 1.0 when denominator is 0
+        #expect(throws: CIFError.invalidCommand(command: "DS 1 0", reason: "scale denominator is zero")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
     }
 
     @Test func boxWithZeroDimension() throws {
-        // B with zero length → degenerate rectangle (line)
         let cif = "DS 1 1; L 1; B 0 100 50 50; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        if case .boundary(let b) = lib.cells[0].elements[0] {
-            // Half-length of 0 → x range collapsed
-            #expect(b.points[0].x == b.points[1].x)
-        } else {
-            Issue.record("Expected boundary")
+        #expect(throws: CIFError.invalidCommand(command: "B 0 100 50 50", reason: "box dimensions must be positive")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
         }
     }
 
     @Test func polygonTwoPoints() throws {
-        // P with only 2 points → not enough for polygon, should be skipped
         let cif = "DS 1 1; L 1; P 0 0 100 0; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        // 2 coordinate pairs → 2 points, minimum 3 required
-        #expect(lib.cells[0].elements.isEmpty)
+        #expect(throws: CIFError.invalidCommand(command: "P 0 0 100 0", reason: "P requires at least three coordinate pairs")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
     }
 
     @Test func wireSinglePoint() throws {
-        // W with only one point → too few, should be skipped
         let cif = "DS 1 1; L 1; W 10 50 50; DF; E"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        #expect(lib.cells[0].elements.isEmpty)
+        #expect(throws: CIFError.invalidCommand(command: "W 10 50 50", reason: "W requires a width and at least two coordinate pairs")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
     }
 
     @Test func cellRefWithoutTransform() throws {
@@ -147,10 +143,32 @@ struct CIFReaderEdgeCaseTests {
     }
 
     @Test func dataAfterEnd() throws {
-        // Data after E should be ignored
         let cif = "DS 1 1; L 1; B 100 100 50 50; DF; E; DS 2 1; DF;"
-        let lib = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        // Only cell from before E
-        #expect(lib.cells.count == 1)
+        #expect(throws: CIFError.commandAfterEnd("DS 2 1")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
+    }
+
+    @Test func duplicateCellNameExtensionIsRejected() throws {
+        let cif = "DS 1 1; 9 FIRST; 9 SECOND; DF; E"
+        #expect(throws: CIFError.invalidCommand(command: "9 SECOND", reason: "cell name is already defined")) {
+            _ = try CIFLibraryReader.read(Data(cif.utf8), databaseUnitScale: try testDatabaseUnitScale())
+        }
+    }
+
+    @Test func namedLayerDoesNotCollideWithNumericLayer() throws {
+        let cif = "DS 1 1; L METAL1; B 10 10 5 5; L 1; B 10 10 25 5; DF; E"
+        let library = try CIFLibraryReader.read(
+            Data(cif.utf8),
+            databaseUnitScale: try testDatabaseUnitScale()
+        )
+
+        guard case .boundary(let namedLayerBoundary) = library.cells[0].elements[0],
+              case .boundary(let numericLayerBoundary) = library.cells[0].elements[1] else {
+            Issue.record("Expected two boundaries")
+            return
+        }
+        #expect(namedLayerBoundary.layer != numericLayerBoundary.layer)
+        #expect(numericLayerBoundary.layer == 1)
     }
 }

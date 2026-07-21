@@ -8,25 +8,25 @@ import LayoutIR
 @Suite("CIFTokenizer")
 struct CIFTokenizerTests {
 
-    @Test func emptyInput() {
-        let tokens = CIFTokenizer.tokenize("")
+    @Test func emptyInput() throws {
+        let tokens = try CIFTokenizer.tokenize("")
         #expect(tokens.isEmpty)
     }
 
-    @Test func simpleCommand() {
-        let tokens = CIFTokenizer.tokenize("L 1;")
+    @Test func simpleCommand() throws {
+        let tokens = try CIFTokenizer.tokenize("L 1;")
         #expect(tokens.count == 1)
         #expect(tokens[0] == "L 1")
     }
 
-    @Test func commentSkipping() {
-        let tokens = CIFTokenizer.tokenize("(this is a comment) L 1;")
+    @Test func commentSkipping() throws {
+        let tokens = try CIFTokenizer.tokenize("(this is a comment) L 1;")
         #expect(tokens.count == 1)
         #expect(tokens[0] == "L 1")
     }
 
-    @Test func multipleCommands() {
-        let tokens = CIFTokenizer.tokenize("DS 1 100; L 1; B 100 50 50 25; DF;")
+    @Test func multipleCommands() throws {
+        let tokens = try CIFTokenizer.tokenize("DS 1 100; L 1; B 100 50 50 25; DF;")
         #expect(tokens.count == 4)
         #expect(tokens[0] == "DS 1 100")
         #expect(tokens[1] == "L 1")

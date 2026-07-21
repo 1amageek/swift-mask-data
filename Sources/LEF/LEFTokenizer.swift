@@ -3,7 +3,7 @@ import Foundation
 /// Splits LEF text into tokens (words and punctuation).
 public enum LEFTokenizer {
 
-    public static func tokenize(_ text: String) -> [String] {
+    public static func tokenize(_ text: String) throws -> [String] {
         var tokens: [String] = []
         var current = ""
         var inComment = false
@@ -62,6 +62,7 @@ public enum LEFTokenizer {
             }
         }
 
+        guard !inQuote else { throw LEFError.unterminatedQuotedString }
         if !current.isEmpty {
             tokens.append(current)
         }

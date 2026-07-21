@@ -19,25 +19,25 @@ enum DXFArcGeometry {
         startAngleDeg: Double, endAngleDeg: Double,
         segments: Int,
         dbu: Double
-    ) -> [IRPoint] {
+    ) throws -> [IRPoint] {
         guard radius > 0, segments > 0 else { return [] }
 
-        let start = startAngleDeg * .pi / 180.0
-        var end = endAngleDeg * .pi / 180.0
-
-        // Ensure end > start (counterclockwise sweep)
-        while end <= start {
-            end += 2.0 * .pi
-        }
-
-        let sweep = end - start
+        let rawStart = try finiteAngle(startAngleDeg / 180.0 * .pi, entity: "ARC")
+        let rawEnd = try finiteAngle(endAngleDeg / 180.0 * .pi, entity: "ARC")
+        let start = normalizedAngle(rawStart)
+        let sweep = try counterclockwiseSweep(from: rawStart, to: rawEnd, entity: "ARC")
         var points: [IRPoint] = []
         for seg in 0...segments {
             let t = Double(seg) / Double(segments)
             let angle = start + t * sweep
             let px = cx + radius * cos(angle)
             let py = cy + radius * sin(angle)
-            points.append(IRPoint(x: Int32(px * dbu), y: Int32(py * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: px,
+                y: py,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "ARC"
+            ))
         }
 
         return points
@@ -49,7 +49,7 @@ enum DXFArcGeometry {
         radius: Double,
         segments: Int,
         dbu: Double
-    ) -> [IRPoint] {
+    ) throws -> [IRPoint] {
         guard radius > 0, segments > 0 else { return [] }
 
         var points: [IRPoint] = []
@@ -57,7 +57,12 @@ enum DXFArcGeometry {
             let angle = Double(seg) / Double(segments) * 2.0 * .pi
             let px = cx + radius * cos(angle)
             let py = cy + radius * sin(angle)
-            points.append(IRPoint(x: Int32(px * dbu), y: Int32(py * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: px,
+                y: py,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "CIRCLE"
+            ))
         }
         return points
     }
@@ -78,7 +83,7 @@ enum DXFArcGeometry {
         startParam: Double, endParam: Double,
         segments: Int,
         dbu: Double
-    ) -> [IRPoint] {
+    ) throws -> [IRPoint] {
         guard segments > 0 else { return [] }
 
         let majorLen = (majorDx * majorDx + majorDy * majorDy).squareRoot()
@@ -90,14 +95,12 @@ enum DXFArcGeometry {
         let cosR = cos(rot)
         let sinR = sin(rot)
 
-        let start = startParam
-        var end = endParam
-        while end <= start {
-            end += 2.0 * .pi
-        }
+        let rawStart = try finiteAngle(startParam, entity: "ELLIPSE")
+        let rawEnd = try finiteAngle(endParam, entity: "ELLIPSE")
+        let start = normalizedAngle(rawStart)
 
         var points: [IRPoint] = []
-        let sweep = end - start
+        let sweep = try counterclockwiseSweep(from: rawStart, to: rawEnd, entity: "ELLIPSE")
         for seg in 0...segments {
             let t = Double(seg) / Double(segments)
             let param = start + t * sweep
@@ -107,7 +110,12 @@ enum DXFArcGeometry {
             // Rotate and translate
             let px = cx + ex * cosR - ey * sinR
             let py = cy + ex * sinR + ey * cosR
-            points.append(IRPoint(x: Int32(px * dbu), y: Int32(py * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: px,
+                y: py,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "ELLIPSE"
+            ))
         }
 
         return points
@@ -121,7 +129,7 @@ enum DXFArcGeometry {
         bulge: Double,
         segments: Int,
         dbu: Double
-    ) -> [IRPoint] {
+    ) throws -> [IRPoint] {
         guard bulge != 0 else { return [] }
 
         let dx = p2.x - p1.x
@@ -171,9 +179,39 @@ enum DXFArcGeometry {
             let angle = start + t * sweep
             let px = cx + radius * cos(angle)
             let py = cy + radius * sin(angle)
-            points.append(IRPoint(x: Int32(px * dbu), y: Int32(py * dbu)))
+            points.append(try DXFCoordinate.point(
+                x: px,
+                y: py,
+                databaseUnitsPerMicrometer: dbu,
+                entity: "POLYLINE"
+            ))
         }
 
         return points
+    }
+
+    private static func finiteAngle(_ value: Double, entity: String) throws -> Double {
+        guard value.isFinite else {
+            throw DXFError.coordinateOutOfRange(entity: entity, value: String(value))
+        }
+        return value
+    }
+
+    private static func normalizedAngle(_ value: Double) -> Double {
+        value.truncatingRemainder(dividingBy: 2.0 * .pi)
+    }
+
+    private static func counterclockwiseSweep(
+        from start: Double,
+        to end: Double,
+        entity: String
+    ) throws -> Double {
+        let difference = end - start
+        guard difference.isFinite else {
+            throw DXFError.coordinateOutOfRange(entity: entity, value: String(difference))
+        }
+        guard difference <= 0 else { return difference }
+        let remainder = difference.truncatingRemainder(dividingBy: 2.0 * .pi)
+        return remainder > 0 ? remainder : remainder + 2.0 * .pi
     }
 }

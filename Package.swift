@@ -164,6 +164,8 @@ let package = Package(
                 "OASIS",
                 "LEF",
                 "DEF",
+                "CIF",
+                "DXF",
                 "FormatDetector",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]

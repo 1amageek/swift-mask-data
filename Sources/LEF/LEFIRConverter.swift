@@ -8,6 +8,13 @@ public enum LEFIRConverter {
     /// Convert a LEFDocument to an IRLibrary.
     /// Each MACRO becomes an IRCell with boundaries for PIN/OBS geometry.
     public static func toIRLibrary(_ doc: LEFDocument) throws -> IRLibrary {
+        let databaseUnitScale = try DatabaseUnitScale(
+            databaseUnitsPerMicrometer: doc.dbuPerMicron
+        )
+        guard doc.layers.count <= Int(Int16.max) else {
+            throw LEFError.layerIdentifierOutOfRange(layerCount: doc.layers.count)
+        }
+
         var layerMap: [String: Int16] = [:]
         for (idx, layer) in doc.layers.enumerated() {
             layerMap[layer.name] = Int16(idx + 1)
@@ -21,34 +28,44 @@ public enum LEFIRConverter {
 
             for pin in macro.pins {
                 for port in pin.ports {
-                    let layer = layerMap[port.layerName] ?? 0
+                    guard let layer = layerMap[port.layerName] else {
+                        throw LEFError.unresolvedLayer(port.layerName)
+                    }
                     for r in port.rects {
-                        let boundary = rectToBoundary(r, layer: layer, dbu: dbu)
+                        let boundary = try rectToBoundary(r, layer: layer, dbu: dbu)
                         elements.append(.boundary(boundary))
                     }
                     for poly in port.polygons {
-                        let boundary = polygonToBoundary(poly, layer: layer, dbu: dbu)
+                        let boundary = try polygonToBoundary(poly, layer: layer, dbu: dbu)
                         elements.append(.boundary(boundary))
                     }
                     if let firstRect = port.rects.first {
-                        let cx = Int32((firstRect.x1 + firstRect.x2) / 2.0 * dbu)
-                        let cy = Int32((firstRect.y1 + firstRect.y2) / 2.0 * dbu)
+                        let center = try LEFCoordinate.point(
+                            x: midpoint(firstRect.x1, firstRect.x2),
+                            y: midpoint(firstRect.y1, firstRect.y2),
+                            databaseUnitsPerMicrometer: dbu,
+                            context: "PIN \(pin.name) label"
+                        )
                         elements.append(.text(IRText(
                             layer: layer,
                             texttype: 0,
                             transform: .identity,
-                            position: IRPoint(x: cx, y: cy),
+                            position: center,
                             string: pin.name,
                             properties: []
                         )))
                     } else if let firstPoly = port.polygons.first, !firstPoly.isEmpty {
-                        let cx = Int32(firstPoly.map(\.x).reduce(0, +) / Double(firstPoly.count) * dbu)
-                        let cy = Int32(firstPoly.map(\.y).reduce(0, +) / Double(firstPoly.count) * dbu)
+                        let center = try LEFCoordinate.point(
+                            x: try mean(firstPoly.map(\.x), context: "PIN \(pin.name) label x"),
+                            y: try mean(firstPoly.map(\.y), context: "PIN \(pin.name) label y"),
+                            databaseUnitsPerMicrometer: dbu,
+                            context: "PIN \(pin.name) label"
+                        )
                         elements.append(.text(IRText(
                             layer: layer,
                             texttype: 0,
                             transform: .identity,
-                            position: IRPoint(x: cx, y: cy),
+                            position: center,
                             string: pin.name,
                             properties: []
                         )))
@@ -57,21 +74,20 @@ public enum LEFIRConverter {
             }
 
             for obs in macro.obs {
-                let layer = layerMap[obs.layerName] ?? 0
+                guard let layer = layerMap[obs.layerName] else {
+                    throw LEFError.unresolvedLayer(obs.layerName)
+                }
                 for r in obs.rects {
-                    elements.append(.boundary(rectToBoundary(r, layer: layer, dbu: dbu)))
+                    elements.append(.boundary(try rectToBoundary(r, layer: layer, dbu: dbu)))
                 }
                 for poly in obs.polygons {
-                    elements.append(.boundary(polygonToBoundary(poly, layer: layer, dbu: dbu)))
+                    elements.append(.boundary(try polygonToBoundary(poly, layer: layer, dbu: dbu)))
                 }
             }
 
             cells.append(IRCell(name: macro.name, elements: elements))
         }
 
-        let databaseUnitScale = try DatabaseUnitScale(
-            databaseUnitsPerMicrometer: dbu
-        )
         return IRLibrary(
             name: "LEF",
             databaseUnitScale: databaseUnitScale,
@@ -81,9 +97,10 @@ public enum LEFIRConverter {
 
     /// Convert an IRLibrary to a LEFDocument.
     /// Each IRCell becomes a MACRO. Boundaries become OBS geometry.
-    public static func toLEFDocument(_ library: IRLibrary) -> LEFDocument {
+    public static func toLEFDocument(_ library: IRLibrary) throws -> LEFDocument {
         let dbu = library.databaseUnitScale.databaseUnitsPerMicrometer
         var macros: [LEFMacroDef] = []
+        var usedLayers: Set<Int16> = []
 
         for cell in library.cells {
             var obs: [LEFPort] = []
@@ -91,7 +108,8 @@ public enum LEFIRConverter {
 
             for element in cell.elements {
                 if case .boundary(let b) = element {
-                    let rect = boundaryToRect(b, dbu: dbu)
+                    usedLayers.insert(b.layer)
+                    let rect = try boundaryToRect(b, dbu: dbu)
                     layerRects[b.layer, default: []].append(rect)
                 }
             }
@@ -103,40 +121,85 @@ public enum LEFIRConverter {
             macros.append(LEFMacroDef(name: cell.name, obs: obs))
         }
 
-        return LEFDocument(dbuPerMicron: dbu, macros: macros)
+        let layers = usedLayers.sorted().map {
+            LEFLayerDef(name: "LAYER_\($0)", type: .routing)
+        }
+        return LEFDocument(dbuPerMicron: dbu, layers: layers, macros: macros)
     }
 
     // MARK: - Helpers
 
-    private static func rectToBoundary(_ r: LEFRect, layer: Int16, dbu: Double) -> IRBoundary {
-        let x1 = Int32(r.x1 * dbu)
-        let y1 = Int32(r.y1 * dbu)
-        let x2 = Int32(r.x2 * dbu)
-        let y2 = Int32(r.y2 * dbu)
+    private static func rectToBoundary(_ r: LEFRect, layer: Int16, dbu: Double) throws -> IRBoundary {
+        let minimum = try LEFCoordinate.point(
+            x: r.x1,
+            y: r.y1,
+            databaseUnitsPerMicrometer: dbu,
+            context: "RECT minimum"
+        )
+        let maximum = try LEFCoordinate.point(
+            x: r.x2,
+            y: r.y2,
+            databaseUnitsPerMicrometer: dbu,
+            context: "RECT maximum"
+        )
         return IRBoundary(layer: layer, datatype: 0, points: [
-            IRPoint(x: x1, y: y1),
-            IRPoint(x: x2, y: y1),
-            IRPoint(x: x2, y: y2),
-            IRPoint(x: x1, y: y2),
-            IRPoint(x: x1, y: y1),
+            minimum,
+            IRPoint(x: maximum.x, y: minimum.y),
+            maximum,
+            IRPoint(x: minimum.x, y: maximum.y),
+            minimum,
         ], properties: [])
     }
 
-    private static func polygonToBoundary(_ poly: [LEFPoint], layer: Int16, dbu: Double) -> IRBoundary {
-        var points = poly.map { IRPoint(x: Int32($0.x * dbu), y: Int32($0.y * dbu)) }
+    private static func polygonToBoundary(
+        _ polygon: [LEFPoint],
+        layer: Int16,
+        dbu: Double
+    ) throws -> IRBoundary {
+        var points = try polygon.map {
+            try LEFCoordinate.point(
+                x: $0.x,
+                y: $0.y,
+                databaseUnitsPerMicrometer: dbu,
+                context: "POLYGON"
+            )
+        }
         if let first = points.first, points.last != first {
             points.append(first)
         }
         return IRBoundary(layer: layer, datatype: 0, points: points, properties: [])
     }
 
-    private static func boundaryToRect(_ b: IRBoundary, dbu: Double) -> LEFRect {
+    private static func boundaryToRect(_ b: IRBoundary, dbu: Double) throws -> LEFRect {
         let xs = b.points.map(\.x)
         let ys = b.points.map(\.y)
-        let minX = Double(xs.min() ?? 0) / dbu
-        let minY = Double(ys.min() ?? 0) / dbu
-        let maxX = Double(xs.max() ?? 0) / dbu
-        let maxY = Double(ys.max() ?? 0) / dbu
+        guard let minimumX = xs.min(), let minimumY = ys.min(),
+              let maximumX = xs.max(), let maximumY = ys.max() else {
+            throw LEFError.invalidGeometry("boundary has no points")
+        }
+        let minX = Double(minimumX) / dbu
+        let minY = Double(minimumY) / dbu
+        let maxX = Double(maximumX) / dbu
+        let maxY = Double(maximumY) / dbu
         return LEFRect(x1: minX, y1: minY, x2: maxX, y2: maxY)
+    }
+
+    private static func midpoint(_ first: Double, _ second: Double) -> Double {
+        first / 2.0 + second / 2.0
+    }
+
+    private static func mean(_ values: [Double], context: String) throws -> Double {
+        guard !values.isEmpty else {
+            throw LEFError.invalidGeometry("\(context) has no coordinates")
+        }
+        guard values.allSatisfy(\.isFinite) else {
+            throw LEFError.coordinateOutOfRange(context: context, value: "non-finite")
+        }
+        let scale = values.map { abs($0) }.max() ?? 0
+        guard scale > 0 else { return 0 }
+        let count = Double(values.count)
+        return values.reduce(0) { partial, value in
+            partial + value / scale / count
+        } * scale
     }
 }

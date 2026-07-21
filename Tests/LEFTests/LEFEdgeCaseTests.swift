@@ -7,23 +7,29 @@ import LayoutIR
 @Suite("LEF Tokenizer Edge Cases")
 struct LEFTokenizerEdgeCaseTests {
 
-    @Test func emptyInput() {
-        #expect(LEFTokenizer.tokenize("").isEmpty)
+    @Test func emptyInput() throws {
+        #expect(try LEFTokenizer.tokenize("").isEmpty)
     }
 
-    @Test func multipleConsecutiveComments() {
-        let tokens = LEFTokenizer.tokenize("# comment 1\n# comment 2\nVERSION 5.8 ;")
+    @Test func multipleConsecutiveComments() throws {
+        let tokens = try LEFTokenizer.tokenize("# comment 1\n# comment 2\nVERSION 5.8 ;")
         #expect(tokens == ["VERSION", "5.8", ";"])
     }
 
-    @Test func semicolonInQuotedString() {
-        let tokens = LEFTokenizer.tokenize("DIVIDERCHAR \";\" ;")
+    @Test func semicolonInQuotedString() throws {
+        let tokens = try LEFTokenizer.tokenize("DIVIDERCHAR \";\" ;")
         #expect(tokens.contains("\";\""))
     }
 
-    @Test func noTrailingNewline() {
-        let tokens = LEFTokenizer.tokenize("VERSION 5.8 ;")
+    @Test func noTrailingNewline() throws {
+        let tokens = try LEFTokenizer.tokenize("VERSION 5.8 ;")
         #expect(tokens == ["VERSION", "5.8", ";"])
+    }
+
+    @Test func unterminatedQuotedStringFails() {
+        #expect(throws: LEFError.unterminatedQuotedString) {
+            try LEFTokenizer.tokenize("DIVIDERCHAR \"")
+        }
     }
 }
 
@@ -44,6 +50,33 @@ struct LEFReaderEdgeCaseTests {
         let doc = try LEFLibraryReader.read(Data("".utf8))
         #expect(doc.layers.isEmpty)
         #expect(doc.macros.isEmpty)
+    }
+
+    @Test func malformedNumberFailsClosed() {
+        let lef = "VERSION 5.8 ; LAYER M1 TYPE ROUTING ; WIDTH wide ; END M1 END LIBRARY"
+        #expect(throws: LEFError.invalidNumber(command: "WIDTH", value: "wide")) {
+            try LEFLibraryReader.read(Data(lef.utf8))
+        }
+    }
+
+    @Test func unterminatedLayerFailsClosed() {
+        let lef = "VERSION 5.8 ; LAYER M1 TYPE ROUTING ; END LIBRARY"
+        #expect(throws: LEFError.mismatchedEnd(expected: "M1", actual: "LIBRARY")) {
+            try LEFLibraryReader.read(Data(lef.utf8))
+        }
+    }
+
+    @Test func unsupportedCommandFailsClosed() {
+        let lef = "VERSION 5.8 ; PROPERTYDEFINITIONS END PROPERTYDEFINITIONS END LIBRARY"
+        #expect(throws: LEFError.unsupportedCommand("PROPERTYDEFINITIONS")) {
+            try LEFLibraryReader.read(Data(lef.utf8))
+        }
+    }
+
+    @Test func missingLibraryEndFailsClosed() {
+        #expect(throws: LEFError.invalidStructure("END LIBRARY is missing")) {
+            try LEFLibraryReader.read(Data("VERSION 5.8 ;".utf8))
+        }
     }
 
     @Test func layerWithoutDirection() throws {
@@ -167,6 +200,45 @@ struct LEFReaderEdgeCaseTests {
         #expect(abs(l.width! - 0.0456) < 1e-9)
         #expect(abs(l.spacing! - 0.789) < 1e-9)
     }
+
+    @Test func densityRulesRoundTripWithoutLoss() throws {
+        let lef = """
+        VERSION 5.8 ;
+        LAYER metal1
+          TYPE ROUTING ;
+          MINIMUMDENSITY 27.5 ;
+          MAXIMUMDENSITY 72.5 ;
+          DENSITYCHECKWINDOW 10.25 20.5 ;
+          DENSITYCHECKSTEP 5.125 ;
+        END metal1
+        END LIBRARY
+        """
+
+        let first = try LEFLibraryReader.read(Data(lef.utf8))
+        let encoded = try LEFLibraryWriter.write(first)
+        let second = try LEFLibraryReader.read(encoded)
+        let layer = second.layers[0]
+
+        #expect(layer.minimumDensity == 27.5)
+        #expect(layer.maximumDensity == 72.5)
+        #expect(layer.densityCheckWindow?.length == 10.25)
+        #expect(layer.densityCheckWindow?.width == 20.5)
+        #expect(layer.densityCheckStep == 5.125)
+    }
+
+    @Test func invalidDensityRangeFailsClosed() {
+        let lef = "VERSION 5.8 ; LAYER M1 TYPE ROUTING ; MINIMUMDENSITY 101 ; END M1 END LIBRARY"
+        #expect(throws: LEFError.invalidNumber(command: "MINIMUMDENSITY", value: "101")) {
+            try LEFLibraryReader.read(Data(lef.utf8))
+        }
+    }
+
+    @Test func inconsistentDensityRangeFailsClosed() {
+        let lef = "VERSION 5.8 ; LAYER M1 TYPE ROUTING ; MINIMUMDENSITY 80 ; MAXIMUMDENSITY 20 ; END M1 END LIBRARY"
+        #expect(throws: LEFError.invalidStructure("LAYER M1 minimum density exceeds maximum density")) {
+            try LEFLibraryReader.read(Data(lef.utf8))
+        }
+    }
 }
 
 @Suite("LEF Writer Edge Cases")
@@ -194,6 +266,23 @@ struct LEFWriterEdgeCaseTests {
         #expect(text.contains("MACRO EMPTY"))
         #expect(text.contains("END EMPTY"))
     }
+
+    @Test func writerRejectsInconsistentDensityRange() {
+        let document = LEFDocument(layers: [
+            LEFLayerDef(
+                name: "M1",
+                type: .routing,
+                minimumDensity: 80,
+                maximumDensity: 20
+            )
+        ])
+
+        #expect(throws: LEFError.invalidStructure(
+            "LAYER M1 minimum density exceeds maximum density"
+        )) {
+            try LEFLibraryWriter.write(document)
+        }
+    }
 }
 
 @Suite("LEF IR Converter Edge Cases")
@@ -203,6 +292,70 @@ struct LEFIRConverterEdgeCaseTests {
         let doc = LEFDocument()
         let lib = try LEFIRConverter.toIRLibrary(doc)
         #expect(lib.cells.isEmpty)
+    }
+
+    @Test func unresolvedGeometryLayerFailsClosed() {
+        let document = LEFDocument(macros: [
+            LEFMacroDef(name: "CELL", obs: [
+                LEFPort(layerName: "MISSING", rects: [LEFRect(x1: 0, y1: 0, x2: 1, y2: 1)])
+            ])
+        ])
+        #expect(throws: LEFError.unresolvedLayer("MISSING")) {
+            try LEFIRConverter.toIRLibrary(document)
+        }
+    }
+
+    @Test func coordinateOverflowFailsClosed() throws {
+        let document = LEFDocument(
+            dbuPerMicron: 1000,
+            layers: [LEFLayerDef(name: "M1", type: .routing)],
+            macros: [LEFMacroDef(name: "CELL", obs: [
+                LEFPort(
+                    layerName: "M1",
+                    rects: [LEFRect(x1: 0, y1: 0, x2: 3_000_000, y2: 1)]
+                )
+            ])]
+        )
+
+        do {
+            _ = try LEFIRConverter.toIRLibrary(document)
+            Issue.record("Expected coordinate overflow to fail")
+        } catch let error as LEFError {
+            guard case .coordinateOutOfRange(let context, _) = error else {
+                Issue.record("Unexpected error: \(error)")
+                return
+            }
+            #expect(context == "RECT maximum x")
+        }
+    }
+
+    @Test func emptyBoundaryFailsClosed() throws {
+        let library = IRLibrary(
+            name: "TEST",
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
+            cells: [IRCell(name: "CELL", elements: [
+                .boundary(IRBoundary(layer: 1, datatype: 0, points: [], properties: []))
+            ])]
+        )
+        #expect(throws: LEFError.invalidGeometry("boundary has no points")) {
+            try LEFIRConverter.toLEFDocument(library)
+        }
+    }
+
+    @Test func emptySpacingTableEntryFailsClosed() {
+        let document = LEFDocument(layers: [
+            LEFLayerDef(
+                name: "M1",
+                type: .routing,
+                spacingTable: LEFSpacingTable(
+                    parallelRunLengths: [],
+                    widthEntries: [.init(width: 0.1, spacings: [])]
+                )
+            )
+        ])
+        #expect(throws: LEFError.invalidGeometry("spacing-table width entry has no spacing value")) {
+            try LEFTechIRConverter.toIRTechLibrary(document)
+        }
     }
 
     @Test func macroWithMultiplePins() throws {
@@ -232,7 +385,7 @@ struct LEFIRConverterEdgeCaseTests {
                 ], properties: []))
             ])]
         )
-        let lef = LEFIRConverter.toLEFDocument(original)
+        let lef = try LEFIRConverter.toLEFDocument(original)
         let back = try LEFIRConverter.toIRLibrary(lef)
         // Cell name preserved
         #expect(back.cells[0].name == "BUF")

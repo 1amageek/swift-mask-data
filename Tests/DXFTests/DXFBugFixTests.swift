@@ -15,6 +15,8 @@ struct DXFBugFixTests {
             "  2", "ENTITIES",
             "  0", "HATCH",
             "  8", "1",
+            // number of boundary paths
+            " 91", "1",
             // boundary path type: edge boundary (not polyline)
             " 92", "0",
             // number of edges
@@ -33,6 +35,8 @@ struct DXFBugFixTests {
             " 50", "0",
             // end angle in degrees
             " 51", "180",
+            // counterclockwise flag
+            " 73", "1",
             "  0", "ENDSEC",
             "  0", "EOF",
         ].joined(separator: "\n")
@@ -143,18 +147,14 @@ struct DXFBugFixTests {
             "  0", "EOF",
         ].joined(separator: "\n")
 
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        // TOP cell should have the INSERT
-        let topCell = lib.cells[0]
-        if case .cellRef(let ref) = topCell.elements[0] {
-            #expect(ref.cellName == "MYBLK")
-            // Geometric mean of 2 and 3 = sqrt(6) ~ 2.449
-            let expectedMag = (2.0 * 3.0).squareRoot()
-            #expect(abs(ref.transform.magnification - expectedMag) < 0.01)
-            // Should not be mirrored (both scales positive)
-            #expect(ref.transform.mirrorX == false)
-        } else {
-            Issue.record("Expected cellRef from INSERT")
+        do {
+            _ = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
+            Issue.record("Expected non-uniform scaling to fail")
+        } catch let error as DXFError {
+            #expect(error == .unsupportedTransform(
+                entity: "INSERT",
+                reason: "non-uniform or Y-axis mirrored scale"
+            ))
         }
     }
 

@@ -90,6 +90,46 @@ struct CIFWriterTests {
         #expect(text.contains("C 1 T 100 200"))
     }
 
+    @Test func duplicateCellNamesAreRejected() throws {
+        let scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000)
+        let library = IRLibrary(
+            name: "test",
+            databaseUnitScale: scale,
+            cells: [IRCell(name: "DUPLICATE"), IRCell(name: "DUPLICATE")]
+        )
+
+        #expect(throws: CIFError.duplicateCellName("DUPLICATE")) {
+            _ = try CIFLibraryWriter.write(library)
+        }
+    }
+
+    @Test func roundTripPreservesNamedCellReference() throws {
+        let cells = [
+            IRCell(name: "NAND2_X1", elements: []),
+            IRCell(name: "TOP", elements: [
+                .cellRef(IRCellRef(
+                    cellName: "NAND2_X1",
+                    origin: IRPoint(x: 100, y: 200),
+                    transform: .identity,
+                    properties: []
+                )),
+            ]),
+        ]
+        let scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000)
+        let library = IRLibrary(name: "test", databaseUnitScale: scale, cells: cells)
+
+        let data = try CIFLibraryWriter.write(library)
+        let result = try CIFLibraryReader.read(data, databaseUnitScale: scale)
+
+        #expect(result.cells.map(\.name) == ["NAND2_X1", "TOP"])
+        guard case .cellRef(let reference) = result.cells[1].elements.first else {
+            Issue.record("Expected named cell reference")
+            return
+        }
+        #expect(reference.cellName == "NAND2_X1")
+        #expect(reference.origin == IRPoint(x: 100, y: 200))
+    }
+
     @Test func writeCellRefWithMirror() throws {
         let cells = [
             IRCell(name: "CHILD", elements: []),
@@ -167,6 +207,38 @@ struct CIFWriterTests {
         if case .boundary(let b) = result.cells[0].elements[0] {
             #expect(b.points.count == 4) // auto-closed
         }
+    }
+
+    @Test func duplicatedCornerIsWrittenAsPolygonAndRoundTrips() throws {
+        let points = [
+            IRPoint(x: 0, y: 0),
+            IRPoint(x: 100, y: 0),
+            IRPoint(x: 100, y: 100),
+            IRPoint(x: 100, y: 100),
+            IRPoint(x: 0, y: 0),
+        ]
+        let cell = IRCell(name: "DUPLICATED_CORNER", elements: [
+            .boundary(IRBoundary(
+                layer: 1,
+                datatype: 0,
+                points: points,
+                properties: []
+            )),
+        ])
+        let scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 1_000)
+        let library = IRLibrary(name: "test", databaseUnitScale: scale, cells: [cell])
+
+        let data = try CIFLibraryWriter.write(library)
+        let text = try #require(String(data: data, encoding: .utf8))
+        #expect(text.contains("P 0 0 100 0 100 100 100 100;"))
+        #expect(!text.contains("B 100 100 50 50;"))
+
+        let result = try CIFLibraryReader.read(data, databaseUnitScale: scale)
+        guard case .boundary(let boundary) = result.cells[0].elements.first else {
+            Issue.record("Expected polygon boundary")
+            return
+        }
+        #expect(boundary.points == points)
     }
 
     @Test func roundTripPath() throws {

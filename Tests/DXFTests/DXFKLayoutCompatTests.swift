@@ -46,8 +46,12 @@ struct DXFArcTests {
         let dxf = """
           0\nSECTION\n  2\nENTITIES\n  0\nARC\n  8\n1\n 10\n0.0\n 20\n0.0\n 40\n0.0\n 50\n0.0\n 51\n90.0\n  0\nENDSEC\n  0\nEOF
         """
-        let lib = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
-        #expect(lib.cells.isEmpty)
+        do {
+            _ = try DXFLibraryReader.read(Data(dxf.utf8), databaseUnitScale: try testDatabaseUnitScale())
+            Issue.record("Expected strict radius validation to fail")
+        } catch let error as DXFError {
+            #expect(error == .invalidNumber(entity: "ARC", groupCode: 40, value: "0.0"))
+        }
     }
 }
 

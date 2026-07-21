@@ -36,7 +36,7 @@ public enum DXFLibraryWriter {
         writeTables(to: &lines, layers: layerNames.sorted())
 
         // BLOCKS section
-        writeBlocks(to: &lines, cells: library.cells, dbu: dbu, options: options)
+        try writeBlocks(to: &lines, cells: library.cells, dbu: dbu, options: options)
 
         // ENTITIES section (first cell = top cell)
         lines.append("  0")
@@ -46,7 +46,7 @@ public enum DXFLibraryWriter {
 
         if let topCell = library.cells.first {
             for element in topCell.elements {
-                writeElement(element, to: &lines, dbu: dbu, options: options)
+                try writeElement(element, to: &lines, dbu: dbu, options: options)
             }
         }
 
@@ -121,7 +121,7 @@ public enum DXFLibraryWriter {
         lines.append("ENDSEC")
     }
 
-    private static func writeBlocks(to lines: inout [String], cells: [IRCell], dbu: Double, options: Options) {
+    private static func writeBlocks(to lines: inout [String], cells: [IRCell], dbu: Double, options: Options) throws {
         guard cells.count > 1 else { return }
 
         lines.append("  0")
@@ -144,7 +144,7 @@ public enum DXFLibraryWriter {
             lines.append("0.0")
 
             for element in cell.elements {
-                writeElement(element, to: &lines, dbu: dbu, options: options)
+                try writeElement(element, to: &lines, dbu: dbu, options: options)
             }
 
             lines.append("  0")
@@ -157,28 +157,31 @@ public enum DXFLibraryWriter {
 
     // MARK: - Element Writers
 
-    private static func writeElement(_ element: IRElement, to lines: inout [String], dbu: Double, options: Options) {
+    private static func writeElement(_ element: IRElement, to lines: inout [String], dbu: Double, options: Options) throws {
         switch element {
         case .boundary(let b):
-            writeBoundary(b, to: &lines, dbu: dbu, options: options)
+            try writeBoundary(b, to: &lines, dbu: dbu, options: options)
         case .path(let p):
-            writePath(p, to: &lines, dbu: dbu, options: options)
+            try writePath(p, to: &lines, dbu: dbu, options: options)
         case .text(let t):
-            writeText(t, to: &lines, dbu: dbu, options: options)
+            try writeText(t, to: &lines, dbu: dbu, options: options)
         case .cellRef(let ref):
-            writeCellRef(ref, to: &lines, dbu: dbu)
+            try writeCellRef(ref, to: &lines, dbu: dbu)
         case .arrayRef(let aref):
-            writeArrayRef(aref, to: &lines, dbu: dbu)
+            try writeArrayRef(aref, to: &lines, dbu: dbu)
         }
     }
 
-    private static func writeBoundary(_ b: IRBoundary, to lines: inout [String], dbu: Double, options: Options) {
+    private static func writeBoundary(_ b: IRBoundary, to lines: inout [String], dbu: Double, options: Options) throws {
+        guard b.datatype == 0, b.properties.isEmpty else {
+            throw DXFError.invalidGeometry("boundary datatype or properties are not representable")
+        }
         var pts = b.points
         // Remove closing point for LWPOLYLINE (it uses flag 1 for closed)
         if pts.count > 1 && pts.first == pts.last {
             pts.removeLast()
         }
-        guard pts.count >= 3 else { return }
+        guard pts.count >= 3 else { throw DXFError.invalidGeometry("boundary has fewer than three vertices") }
 
         let layer = resolveLayerName(b.layer, mapping: options.layerMapping)
 
@@ -199,7 +202,11 @@ public enum DXFLibraryWriter {
         }
     }
 
-    private static func writePath(_ p: IRPath, to lines: inout [String], dbu: Double, options: Options) {
+    private static func writePath(_ p: IRPath, to lines: inout [String], dbu: Double, options: Options) throws {
+        guard p.width == 0, p.pathType == .flush, p.datatype == 0, p.properties.isEmpty else {
+            throw DXFError.invalidGeometry("path width, type, datatype, or properties are not representable")
+        }
+        guard p.points.count >= 2 else { throw DXFError.invalidGeometry("path has fewer than two vertices") }
         let layer = resolveLayerName(p.layer, mapping: options.layerMapping)
 
         if p.points.count == 2 {
@@ -236,7 +243,11 @@ public enum DXFLibraryWriter {
         }
     }
 
-    private static func writeText(_ t: IRText, to lines: inout [String], dbu: Double, options: Options) {
+    private static func writeText(_ t: IRText, to lines: inout [String], dbu: Double, options: Options) throws {
+        guard t.texttype == 0, t.transform == .identity, t.properties.isEmpty,
+              !t.string.isEmpty, !t.string.contains(where: { $0.isNewline }) else {
+            throw DXFError.invalidGeometry("text type, transform, properties, or content are not representable")
+        }
         let layer = resolveLayerName(t.layer, mapping: options.layerMapping)
         lines.append("  0")
         lines.append("TEXT")
@@ -252,7 +263,11 @@ public enum DXFLibraryWriter {
         lines.append(t.string)
     }
 
-    private static func writeCellRef(_ ref: IRCellRef, to lines: inout [String], dbu: Double) {
+    private static func writeCellRef(_ ref: IRCellRef, to lines: inout [String], dbu: Double) throws {
+        guard !ref.cellName.isEmpty, ref.properties.isEmpty else {
+            throw DXFError.invalidGeometry("cell reference name or properties are not representable")
+        }
+        try validateTransform(ref.transform, entity: "INSERT")
         lines.append("  0")
         lines.append("INSERT")
         lines.append("  2")
@@ -265,13 +280,18 @@ public enum DXFLibraryWriter {
         writeTransformGroups(ref.transform, to: &lines)
     }
 
-    private static func writeArrayRef(_ aref: IRArrayRef, to lines: inout [String], dbu: Double) {
+    private static func writeArrayRef(_ aref: IRArrayRef, to lines: inout [String], dbu: Double) throws {
+        guard !aref.cellName.isEmpty, aref.properties.isEmpty,
+              aref.columns > 0, aref.rows > 0, aref.referencePoints.count == 3 else {
+            throw DXFError.invalidGeometry("array reference is incomplete or has unrepresentable properties")
+        }
+        try validateTransform(aref.transform, entity: "INSERT")
         lines.append("  0")
         lines.append("INSERT")
         lines.append("  2")
         lines.append(aref.cellName)
 
-        let origin = aref.referencePoints.first ?? IRPoint(x: 0, y: 0)
+        let origin = aref.referencePoints[0]
         lines.append(" 10")
         lines.append(formatCoord(Double(origin.x) / dbu))
         lines.append(" 20")
@@ -321,6 +341,13 @@ public enum DXFLibraryWriter {
         if abs(transform.angle) > 1e-9 {
             lines.append(" 50")
             lines.append(formatCoord(transform.angle))
+        }
+    }
+
+    private static func validateTransform(_ transform: IRTransform, entity: String) throws {
+        guard transform.magnification.isFinite, transform.magnification > 0,
+              transform.angle.isFinite else {
+            throw DXFError.unsupportedTransform(entity: entity, reason: "non-finite or non-positive transform")
         }
     }
 

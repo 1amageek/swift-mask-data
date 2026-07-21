@@ -9,23 +9,23 @@ import LayoutIR
 @Suite("LEFTokenizer")
 struct LEFTokenizerTests {
 
-    @Test func basicTokens() {
-        let tokens = LEFTokenizer.tokenize("VERSION 5.8 ;")
+    @Test func basicTokens() throws {
+        let tokens = try LEFTokenizer.tokenize("VERSION 5.8 ;")
         #expect(tokens == ["VERSION", "5.8", ";"])
     }
 
-    @Test func quotedString() {
-        let tokens = LEFTokenizer.tokenize("DIVIDERCHAR \"/\" ;")
+    @Test func quotedString() throws {
+        let tokens = try LEFTokenizer.tokenize("DIVIDERCHAR \"/\" ;")
         #expect(tokens.contains("\"/\""))
     }
 
-    @Test func numericValues() {
-        let tokens = LEFTokenizer.tokenize("PITCH 0.28 ;")
+    @Test func numericValues() throws {
+        let tokens = try LEFTokenizer.tokenize("PITCH 0.28 ;")
         #expect(tokens == ["PITCH", "0.28", ";"])
     }
 
-    @Test func commentSkipping() {
-        let tokens = LEFTokenizer.tokenize("# this is a comment\nVERSION 5.8 ;")
+    @Test func commentSkipping() throws {
+        let tokens = try LEFTokenizer.tokenize("# this is a comment\nVERSION 5.8 ;")
         #expect(tokens == ["VERSION", "5.8", ";"])
     }
 }
@@ -278,7 +278,7 @@ struct LEFIRConverterTests {
                 ])
             ]
         )
-        let doc = LEFIRConverter.toLEFDocument(lib)
+        let doc = try LEFIRConverter.toLEFDocument(lib)
         #expect(doc.macros.count == 1)
         #expect(doc.macros[0].name == "BUF")
         #expect(doc.macros[0].obs.count == 1)

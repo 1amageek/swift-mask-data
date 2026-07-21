@@ -5,13 +5,13 @@ public enum LEFTechIRConverter {
 
     // MARK: - LEFDocument → IRTechLibrary
 
-    public static func toIRTechLibrary(_ doc: LEFDocument) -> IRTechLibrary {
+    public static func toIRTechLibrary(_ doc: LEFDocument) throws -> IRTechLibrary {
         var layers: [IRTechLayerDef] = []
         var designRules: [IRTechDesignRule] = []
         var enclosureRules: [IRTechEnclosureRule] = []
 
         for lefLayer in doc.layers {
-            layers.append(convertLayer(lefLayer))
+            layers.append(try convertLayer(lefLayer))
 
             let rule = extractDesignRule(from: lefLayer)
             if rule.minWidth != nil || rule.minSpacing != nil || rule.minArea != nil {
@@ -60,14 +60,15 @@ public enum LEFTechIRConverter {
 
     // MARK: - Layer Conversion
 
-    private static func convertLayer(_ lef: LEFLayerDef) -> IRTechLayerDef {
+    private static func convertLayer(_ lef: LEFLayerDef) throws -> IRTechLayerDef {
         var spacingTable: IRTechSpacingTable?
         if let lefTable = lef.spacingTable {
-            let entries = lefTable.widthEntries.map { entry in
-                IRTechSpacingWidthEntry(
-                    width: entry.width,
-                    spacing: entry.spacings.first ?? 0
-                )
+            var entries: [IRTechSpacingWidthEntry] = []
+            for entry in lefTable.widthEntries {
+                guard let spacing = entry.spacings.first else {
+                    throw LEFError.invalidGeometry("spacing-table width entry has no spacing value")
+                }
+                entries.append(IRTechSpacingWidthEntry(width: entry.width, spacing: spacing))
             }
             spacingTable = IRTechSpacingTable(entries: entries)
         }

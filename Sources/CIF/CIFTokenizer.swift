@@ -1,31 +1,45 @@
 import Foundation
 
-/// Splits CIF text into semicolon-delimited command strings.
+/// Splits CIF text into validated semicolon-delimited command strings.
 public enum CIFTokenizer {
+    /// Tokenizes CIF text into command strings without trailing semicolons.
+    /// A terminal `E` command may omit its semicolon, as permitted by common CIF files.
+    public static func tokenize(_ text: String) throws -> [String] {
+        var commands: [String] = []
+        var current = ""
+        var commentDepth = 0
 
-    /// Tokenize CIF text into command strings (without trailing semicolons).
-    /// Comments (parenthesized text) are stripped.
-    public static func tokenize(_ text: String) -> [String] {
-        let stripped = stripComments(text)
-        return stripped
-            .components(separatedBy: ";")
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-    }
+        for character in text {
+            if character == "(" {
+                commentDepth += 1
+                continue
+            }
+            if character == ")" {
+                guard commentDepth > 0 else {
+                    throw CIFError.invalidCommand(command: String(character), reason: "unmatched closing comment delimiter")
+                }
+                commentDepth -= 1
+                continue
+            }
+            guard commentDepth == 0 else { continue }
 
-    private static func stripComments(_ text: String) -> String {
-        var result = ""
-        result.reserveCapacity(text.count)
-        var depth = 0
-        for ch in text {
-            if ch == "(" {
-                depth += 1
-            } else if ch == ")" {
-                depth = max(0, depth - 1)
-            } else if depth == 0 {
-                result.append(ch)
+            if character == ";" {
+                let command = current.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !command.isEmpty {
+                    commands.append(command)
+                }
+                current.removeAll(keepingCapacity: true)
+            } else {
+                current.append(character)
             }
         }
-        return result
+
+        guard commentDepth == 0 else { throw CIFError.unterminatedComment }
+        let trailing = current.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trailing.isEmpty {
+            guard trailing == "E" else { throw CIFError.unterminatedCommand(trailing) }
+            commands.append(trailing)
+        }
+        return commands
     }
 }

@@ -68,9 +68,9 @@ struct LEFTechIRConverterTests {
         )
     }
 
-    @Test func toIRTechLibrary() {
+    @Test func toIRTechLibrary() throws {
         let doc = sampleLEFDocument()
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.dbuPerMicron == 2000)
         #expect(lib.metadata["lef.version"] == "5.8")
@@ -119,9 +119,9 @@ struct LEFTechIRConverterTests {
         #expect(lib.sites[0].symmetry == [.y])
     }
 
-    @Test func roundTrip() {
+    @Test func roundTrip() throws {
         let original = sampleLEFDocument()
-        let lib = LEFTechIRConverter.toIRTechLibrary(original)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(original)
         let reconstructed = LEFTechIRConverter.toLEFDocument(lib)
 
         #expect(reconstructed.version == "5.8")
@@ -137,9 +137,9 @@ struct LEFTechIRConverterTests {
         #expect(reconstructed.sites[0].siteClass == .core)
     }
 
-    @Test func emptyDocument() {
+    @Test func emptyDocument() throws {
         let doc = LEFDocument()
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.layers.isEmpty)
         #expect(lib.vias.isEmpty)
@@ -148,7 +148,7 @@ struct LEFTechIRConverterTests {
         #expect(lib.dbuPerMicron == 1000)
     }
 
-    @Test func viaWithTwoLayers() {
+    @Test func viaWithTwoLayers() throws {
         let doc = LEFDocument(
             vias: [
                 LEFViaDef(
@@ -160,7 +160,7 @@ struct LEFTechIRConverterTests {
                 )
             ]
         )
-        let lib = LEFTechIRConverter.toIRTechLibrary(doc)
+        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
         #expect(lib.vias[0].bottomLayerName == "M1")
         #expect(lib.vias[0].topLayerName == "M2")

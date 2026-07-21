@@ -8,7 +8,8 @@ public enum LEFLibraryReader {
             throw LEFError.invalidEncoding
         }
 
-        let tokens = LEFTokenizer.tokenize(text)
+        let tokens = try LEFTokenizer.tokenize(text)
+        try LEFStrictValidator.validate(tokens)
         var doc = LEFDocument()
         var i = 0
 
@@ -44,8 +45,11 @@ public enum LEFLibraryReader {
 
             case "LAYER":
                 i += 1
-                let (layer, next) = parseLayer(tokens, from: i)
-                if let layer = layer { doc.layers.append(layer) }
+                let (layer, next) = try parseLayer(tokens, from: i)
+                if let layer = layer {
+                    try LEFStrictValidator.validate(layer)
+                    doc.layers.append(layer)
+                }
                 i = next
 
             case "VIA":
@@ -131,7 +135,7 @@ public enum LEFLibraryReader {
 
     // MARK: - LAYER
 
-    private static func parseLayer(_ tokens: [String], from start: Int) -> (LEFLayerDef?, Int) {
+    private static func parseLayer(_ tokens: [String], from start: Int) throws -> (LEFLayerDef?, Int) {
         guard start < tokens.count else { return (nil, start) }
         let name = tokens[start]
         var i = start + 1
@@ -150,6 +154,10 @@ public enum LEFLibraryReader {
         var area: Double?
         var enclosure: LEFEnclosure?
         var spacingTable: LEFSpacingTable?
+        var minimumDensity: Double?
+        var maximumDensity: Double?
+        var densityCheckWindow: LEFLayerDef.DensityCheckWindow?
+        var densityCheckStep: Double?
 
         while i < tokens.count {
             let upper = tokens[i].uppercased()
@@ -162,7 +170,11 @@ public enum LEFLibraryReader {
                                     capacitance: capacitance, edgeCapacitance: edgeCapacitance,
                                     thickness: thickness, minwidth: minwidth,
                                     maxwidth: maxwidth, area: area,
-                                    enclosure: enclosure, spacingTable: spacingTable), i)
+                                    enclosure: enclosure, spacingTable: spacingTable,
+                                    minimumDensity: minimumDensity,
+                                    maximumDensity: maximumDensity,
+                                    densityCheckWindow: densityCheckWindow,
+                                    densityCheckStep: densityCheckStep), i)
             }
 
             switch upper {
@@ -275,6 +287,25 @@ public enum LEFLibraryReader {
                 let (tbl, next) = parseSpacingTable(tokens, from: i)
                 spacingTable = tbl
                 i = next
+            case "MINIMUMDENSITY":
+                i += 1
+                minimumDensity = try validatedDouble(tokens[i], command: upper)
+                i = skipSemicolon(tokens, i + 1)
+            case "MAXIMUMDENSITY":
+                i += 1
+                maximumDensity = try validatedDouble(tokens[i], command: upper)
+                i = skipSemicolon(tokens, i + 1)
+            case "DENSITYCHECKWINDOW":
+                i += 1
+                densityCheckWindow = LEFLayerDef.DensityCheckWindow(
+                    length: try validatedDouble(tokens[i], command: upper),
+                    width: try validatedDouble(tokens[i + 1], command: upper)
+                )
+                i = skipSemicolon(tokens, i + 2)
+            case "DENSITYCHECKSTEP":
+                i += 1
+                densityCheckStep = try validatedDouble(tokens[i], command: upper)
+                i = skipSemicolon(tokens, i + 1)
             case "PROPERTY":
                 i += 1
                 i = skipToSemicolon(tokens, i)
@@ -282,8 +313,7 @@ public enum LEFLibraryReader {
             case "ANTENNAMODEL", "ANTENNACUMDIFFSIDEAREARATIO", "ANTENNACUMROUTINGAREARATIO",
                  "ANTENNADIFFAREARATIO", "ANTENNADIFFSIDEAREARATIO", "ANTENNAAREARATIO",
                  "ANTENNASIDEAREARATIO", "ANTENNAAREAFACTOR", "ANTENNACUMAREARATIO",
-                 "ANTENNADIFFAREAFACTOR", "MINIMUMCUT", "MINIMUMDENSITY",
-                 "MAXIMUMDENSITY", "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP":
+                 "ANTENNADIFFAREAFACTOR", "MINIMUMCUT":
                 i += 1
                 i = skipToSemicolon(tokens, i)
                 i = skipSemicolon(tokens, i)
@@ -298,7 +328,18 @@ public enum LEFLibraryReader {
                             capacitance: capacitance, edgeCapacitance: edgeCapacitance,
                             thickness: thickness, minwidth: minwidth,
                             maxwidth: maxwidth, area: area,
-                            enclosure: enclosure, spacingTable: spacingTable), i)
+                            enclosure: enclosure, spacingTable: spacingTable,
+                            minimumDensity: minimumDensity,
+                            maximumDensity: maximumDensity,
+                            densityCheckWindow: densityCheckWindow,
+                            densityCheckStep: densityCheckStep), i)
+    }
+
+    private static func validatedDouble(_ token: String, command: String) throws -> Double {
+        guard let value = Double(token), value.isFinite else {
+            throw LEFError.invalidNumber(command: command, value: token)
+        }
+        return value
     }
 
     // MARK: - SPACINGTABLE

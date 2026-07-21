@@ -15,6 +15,20 @@ public struct LEFLayerDef: Hashable, Sendable, Codable {
     public var area: Double?
     public var enclosure: LEFEnclosure?
     public var spacingTable: LEFSpacingTable?
+    public var minimumDensity: Double?
+    public var maximumDensity: Double?
+    public var densityCheckWindow: DensityCheckWindow?
+    public var densityCheckStep: Double?
+
+    public struct DensityCheckWindow: Hashable, Sendable, Codable {
+        public var length: Double
+        public var width: Double
+
+        public init(length: Double, width: Double) {
+            self.length = length
+            self.width = width
+        }
+    }
 
     public enum LayerType: String, Hashable, Sendable, Codable {
         case routing = "ROUTING"
@@ -35,7 +49,10 @@ public struct LEFLayerDef: Hashable, Sendable, Codable {
                 capacitance: Double? = nil, edgeCapacitance: Double? = nil,
                 thickness: Double? = nil, minwidth: Double? = nil,
                 maxwidth: Double? = nil, area: Double? = nil,
-                enclosure: LEFEnclosure? = nil, spacingTable: LEFSpacingTable? = nil) {
+                enclosure: LEFEnclosure? = nil, spacingTable: LEFSpacingTable? = nil,
+                minimumDensity: Double? = nil, maximumDensity: Double? = nil,
+                densityCheckWindow: DensityCheckWindow? = nil,
+                densityCheckStep: Double? = nil) {
         self.name = name
         self.type = type
         self.direction = direction
@@ -52,6 +69,10 @@ public struct LEFLayerDef: Hashable, Sendable, Codable {
         self.area = area
         self.enclosure = enclosure
         self.spacingTable = spacingTable
+        self.minimumDensity = minimumDensity
+        self.maximumDensity = maximumDensity
+        self.densityCheckWindow = densityCheckWindow
+        self.densityCheckStep = densityCheckStep
     }
 }
 

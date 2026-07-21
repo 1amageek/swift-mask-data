@@ -20,17 +20,17 @@ struct DXFErrorTests {
 @Suite("DXFGroupReader")
 struct DXFGroupReaderTests {
 
-    @Test func singlePair() {
+    @Test func singlePair() throws {
         let text = "  0\nSECTION"
-        let groups = DXFGroupReader.read(text)
+        let groups = try DXFGroupReader.read(text)
         #expect(groups.count == 1)
         #expect(groups[0].code == 0)
         #expect(groups[0].value == "SECTION")
     }
 
-    @Test func multiplePairs() {
+    @Test func multiplePairs() throws {
         let text = "  0\nLINE\n 10\n1.5\n 20\n2.5\n 11\n10.0\n 21\n20.0"
-        let groups = DXFGroupReader.read(text)
+        let groups = try DXFGroupReader.read(text)
         #expect(groups.count == 5)
         #expect(groups[0].code == 0)
         #expect(groups[0].value == "LINE")

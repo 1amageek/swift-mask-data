@@ -6,10 +6,71 @@ import GDSII
 import OASIS
 import LEF
 import DEF
+import CIF
+import DXF
 import FormatDetector
 
 @Suite("Golden Mask Data Corpus")
 struct GoldenMaskDataCorpusTests {
+    @Test func independentGDSIIFixtureHasExpectedSemantics() throws {
+        let data = try Self.fixtureData(named: "minimal.gds")
+        #expect(FormatDetector.detect(data) == .gdsii)
+        let library = try GDSLibraryReader.read(data)
+        #expect(library.name == "FIXTURE")
+        #expect(library.databaseUnitScale.databaseUnitsPerMicrometer == 1000)
+        #expect(library.cells.isEmpty)
+    }
+
+    @Test func independentOASISFixtureHasExpectedSemantics() throws {
+        let data = try Self.fixtureData(named: "minimal.oas")
+        #expect(FormatDetector.detect(data) == .oasis)
+        let library = try OASISLibraryReader.read(data)
+        #expect(library.name == "FIXTURE")
+        #expect(library.databaseUnitScale.databaseUnitsPerMicrometer == 1000)
+        #expect(library.cells.isEmpty)
+    }
+
+    @Test func independentLEFFixtureHasExpectedSemantics() throws {
+        let document = try LEFLibraryReader.read(Self.fixtureData(named: "minimal.lef"))
+        #expect(document.dbuPerMicron == 1000)
+        #expect(document.layers.map(\.name) == ["M1"])
+        #expect(document.layers[0].width == 0.1)
+    }
+
+    @Test func independentDEFFixtureHasExpectedSemantics() throws {
+        let document = try DEFLibraryReader.read(Self.fixtureData(named: "minimal.def"))
+        #expect(document.designName == "FIXTURE")
+        #expect(document.dbuPerMicron == 1000)
+        #expect(document.dieArea != nil)
+    }
+
+    @Test func independentCIFFixtureHasExpectedSemantics() throws {
+        let library = try CIFLibraryReader.read(
+            Self.fixtureData(named: "minimal.cif"),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000)
+        )
+        #expect(library.cells.count == 1)
+        #expect(library.cells[0].elements.count == 1)
+        guard case .boundary(let boundary) = library.cells[0].elements[0] else {
+            Issue.record("Expected CIF box boundary")
+            return
+        }
+        #expect(boundary.layer == 1)
+    }
+
+    @Test func independentDXFFixtureHasExpectedSemantics() throws {
+        let library = try DXFLibraryReader.read(
+            Self.fixtureData(named: "minimal.dxf"),
+            databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000)
+        )
+        #expect(library.cells.count == 1)
+        guard case .path(let path) = library.cells[0].elements[0] else {
+            Issue.record("Expected DXF line path")
+            return
+        }
+        #expect(path.points == [IRPoint(x: 0, y: 0), IRPoint(x: 1000, y: 2000)])
+    }
+
     @Test func gdsiiGoldenCorpusRoundTripIsStable() throws {
         let original = try Self.goldenLayoutLibrary()
         let data = try GDSLibraryWriter.write(original)
@@ -150,6 +211,15 @@ struct GoldenMaskDataCorpusTests {
         }
         #expect(labels == ["vin", "out", "0"])
     }
+
+    private static func fixtureData(named name: String) throws -> Data {
+        let fixturesDirectory = URL(fileURLWithPath: #filePath)
+            .deletingLastPathComponent()
+            .deletingLastPathComponent()
+            .appendingPathComponent("Fixtures", isDirectory: true)
+        return try Data(contentsOf: fixturesDirectory.appendingPathComponent(name))
+    }
+
 
     private static let goldenLEF = """
     VERSION 5.8 ;
