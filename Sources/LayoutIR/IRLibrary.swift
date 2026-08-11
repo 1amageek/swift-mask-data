@@ -1,4 +1,4 @@
-import CircuiteFoundation
+import CircuiteFoundationFoundation
 
 public struct IRLibrary: Hashable, Sendable, Codable {
     public var name: String

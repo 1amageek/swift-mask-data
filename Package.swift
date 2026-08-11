@@ -40,6 +40,7 @@ let package = Package(
             name: "LayoutIR",
             dependencies: [
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
+                .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
             ]
         ),
         .target(
