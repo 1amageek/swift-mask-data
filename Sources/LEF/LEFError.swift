@@ -12,6 +12,7 @@ public enum LEFError: Error, Sendable, Equatable, LocalizedError {
     case unresolvedLayer(String)
     case layerIdentifierOutOfRange(layerCount: Int)
     case coordinateOutOfRange(context: String, value: String)
+    case coordinateOffGrid(context: String, value: String)
     case invalidGeometry(String)
 
     public var errorDescription: String? {
@@ -31,6 +32,8 @@ public enum LEFError: Error, Sendable, Equatable, LocalizedError {
             "LEF contains \(layerCount) layers, which exceeds the LayoutIR layer identifier range."
         case .coordinateOutOfRange(let context, let value):
             "LEF \(context) cannot be represented in LayoutIR coordinates: \(value)."
+        case .coordinateOffGrid(let context, let value):
+            "LEF \(context) is not on the database-unit grid: \(value)."
         case .invalidGeometry(let reason):
             "LEF geometry cannot be converted without loss: \(reason)."
         }

@@ -329,6 +329,87 @@ struct LEFIRConverterEdgeCaseTests {
         }
     }
 
+    @Test func physicalCoordinatesRejectQuantization() throws {
+        for coordinate in [0.0005, -0.0005] {
+            let document = LEFDocument(
+                dbuPerMicron: 1000,
+                layers: [LEFLayerDef(name: "M1", type: .routing)],
+                macros: [LEFMacroDef(name: "CELL", obs: [
+                    LEFPort(layerName: "M1", rects: [
+                        LEFRect(x1: coordinate, y1: 0, x2: 1, y2: 1)
+                    ])
+                ])]
+            )
+            do {
+                _ = try LEFIRConverter.toIRLibrary(document)
+                Issue.record("Expected physical coordinate quantization to fail")
+            } catch let error as LEFError {
+                guard case .coordinateOffGrid(let context, _) = error else {
+                    Issue.record("Unexpected error: \(error)")
+                    continue
+                }
+                #expect(context == "RECT minimum x")
+            }
+        }
+    }
+
+    @Test func polygonVerticesRejectQuantization() throws {
+        let document = LEFDocument(
+            dbuPerMicron: 1000,
+            layers: [LEFLayerDef(name: "M1", type: .routing)],
+            macros: [LEFMacroDef(name: "CELL", pins: [
+                LEFPinDef(name: "A", ports: [
+                    LEFPort(layerName: "M1", rects: [], polygons: [[
+                        LEFPoint(x: 0, y: 0), LEFPoint(x: 0.0015, y: 0),
+                        LEFPoint(x: 0.001, y: 0.001)
+                    ]])
+                ])
+            ])]
+        )
+        #expect(throws: LEFError.coordinateOffGrid(context: "POLYGON x", value: "1.5")) {
+            try LEFIRConverter.toIRLibrary(document)
+        }
+    }
+
+    @Test func integerCoordinateLimitsAndBinaryNoise() throws {
+        for coordinate in [Double(Int32.min), Double(Int32.max), -1.0, 0.0, 1.0] {
+            #expect(try LEFCoordinate.int32(coordinate, context: "test") == Int32(coordinate))
+        }
+        #expect(try LEFCoordinate.int32(290.0.nextDown, context: "test") == 290)
+        for coordinate in [Double(Int32.min) - 0.5, Double(Int32.max) + 0.5,
+                           Double.nan, Double.infinity, -Double.infinity] {
+            #expect(throws: LEFError.coordinateOutOfRange(context: "test", value: String(coordinate))) {
+                try LEFCoordinate.int32(coordinate, context: "test")
+            }
+        }
+        #expect(throws: LEFError.coordinateOffGrid(context: "test", value: String(290.0.nextDown.nextDown))) {
+            try LEFCoordinate.int32(290.0.nextDown.nextDown, context: "test")
+        }
+    }
+
+    @Test func exactCoordinatesAndDerivedLabelsRemainUsable() throws {
+        let document = LEFDocument(
+            dbuPerMicron: 1000,
+            layers: [LEFLayerDef(name: "M1", type: .routing)],
+            macros: [LEFMacroDef(name: "CELL", pins: [
+                LEFPinDef(name: "A", ports: [
+                    LEFPort(layerName: "M1", rects: [
+                        LEFRect(x1: -0.001, y1: 0, x2: 0.29, y2: 0.001)
+                    ])
+                ])
+            ])]
+        )
+        let elements = try LEFIRConverter.toIRLibrary(document).cells[0].elements
+        guard case .boundary(let boundary) = elements[0],
+              case .text(let label) = elements[1] else {
+            Issue.record("Expected exact physical geometry and a derived pin label")
+            return
+        }
+        #expect(boundary.points[0] == IRPoint(x: -1, y: 0))
+        #expect(boundary.points[2] == IRPoint(x: 290, y: 1))
+        #expect(label.position == IRPoint(x: 144, y: 0))
+    }
+
     @Test func emptyBoundaryFailsClosed() throws {
         let library = IRLibrary(
             name: "TEST",

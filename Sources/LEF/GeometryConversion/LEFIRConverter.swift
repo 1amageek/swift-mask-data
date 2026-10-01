@@ -44,7 +44,8 @@ public enum LEFIRConverter {
                             x: midpoint(firstRect.x1, firstRect.x2),
                             y: midpoint(firstRect.y1, firstRect.y2),
                             databaseUnitsPerMicrometer: dbu,
-                            context: "PIN \(pin.name) label"
+                            context: "PIN \(pin.name) label",
+                            rounding: .towardZero
                         )
                         elements.append(.text(IRText(
                             layer: layer,
@@ -59,7 +60,8 @@ public enum LEFIRConverter {
                             x: try mean(firstPoly.map(\.x), context: "PIN \(pin.name) label x"),
                             y: try mean(firstPoly.map(\.y), context: "PIN \(pin.name) label y"),
                             databaseUnitsPerMicrometer: dbu,
-                            context: "PIN \(pin.name) label"
+                            context: "PIN \(pin.name) label",
+                            rounding: .towardZero
                         )
                         elements.append(.text(IRText(
                             layer: layer,

@@ -1,12 +1,14 @@
 # swift-mask-data design
 
-## Purpose
+## Purpose and Scope
 
 The package is the standard-mask-data boundary for independently usable design
 tools. It converts files into a stable intermediate representation and provides
 geometry operations without knowing how a project is scheduled or approved.
+The parent is the [LSI system design](../DESIGN.md). The changed LEF boundary is
+owned by the [LEF module design](Sources/LEF/DESIGN.md).
 
-## Layer responsibilities
+## Responsibilities and Boundaries
 
 | Layer | Owns | Does not own |
 |---|---|---|
@@ -15,7 +17,15 @@ geometry operations without knowing how a project is scheduled or approved.
 | `TechIR` | Format-neutral technology records | Foundry qualification decisions |
 | `MaskGeometry` | Polygon boolean/sizing/connectivity and geometry checks | Electrical netlist semantics |
 
-## CircuiteFoundation contract
+## Related Designs
+
+| Design | Relationship | Contract Used | Summary | Cautions |
+|---|---|---|---|---|
+| [LSI](../DESIGN.md) | Parent | Exact standard data and explicit loss | Standalone platform composition | Codec success does not qualify a process |
+| [LEF](Sources/LEF/DESIGN.md) | Child | Typed parsing and geometry conversion | Physical interchange boundary | Off-grid source geometry is rejected |
+| [CircuiteFoundation](../CircuiteFoundation/DESIGN.md) | Depends on | Validated unit scale | Shared identity and units | Domain rules remain outside the dependency floor |
+
+## Contracts and Invariants
 
 `CircuiteFoundation` is a direct dependency of `LayoutIR`:
 
@@ -25,6 +35,8 @@ geometry operations without knowing how a project is scheduled or approved.
 - Artifact, provenance, diagnostic, and engine protocols remain available to
   consuming packages; this library does not wrap codec calls in a generic
   engine envelope.
+
+## Architecture
 
 ```mermaid
 flowchart TD
@@ -49,3 +61,9 @@ same failure contract.
 Agents adding a new format should add a codec target/file set, map it to
 `LayoutIR`, preserve typed parse/write errors, and add round-trip fixtures. They
 should not add project/run state or duplicate `DatabaseUnitScale` validation.
+
+## Verification and Change Impact
+
+Each codec's test target owns parsing, failure and round-trip behavior. Changes to
+LEF geometry conversion require `LEFTests` and the package integration tests;
+consumers must separately prove their process mapping and qualification gates.
