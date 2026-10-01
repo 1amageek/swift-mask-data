@@ -412,8 +412,8 @@ public enum LEFLibraryReader {
         var rowCol: (Int, Int)?
         var resistance: Double?
 
-        // Parse tokens before first ;
-        while i < tokens.count && tokens[i] != ";" {
+        // Only qualifiers belong to the header; the first body LAYER is not a qualifier.
+        while i < tokens.count && ["DEFAULT", "GENERATE"].contains(tokens[i].uppercased()) {
             let upper = tokens[i].uppercased()
             if upper == "DEFAULT" { isDefault = true }
             if upper == "GENERATE" { isGenerate = true }

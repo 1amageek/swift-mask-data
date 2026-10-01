@@ -238,6 +238,45 @@ struct LEFReaderEdgeCaseTests {
         }
     }
 
+    @Test func acceptedStatementsCannotDisappear() {
+        let statements = [
+            "NAMESCASESENSITIVE OFF ;",
+            "MANUFACTURINGGRID 0.005 ;",
+            "LAYER M1 TYPE ROUTING ; PROPERTY custom 1 ; END M1",
+            "LAYER M1 TYPE ROUTING ; DIRECTION INPUT ; END M1",
+            "LAYER M1 TYPE ROUTING ; WIDTH 0.1 ; WIDTH 0.2 ; END M1",
+            "LAYER M1 TYPE ROUTING ; RESISTANCE 2.5 ; END M1",
+            "MACRO C PIN A USE UNKNOWN ; END A END C",
+            "MACRO C OBS LAYER M1 ; VIA 0 0 V1 ; END END C",
+            "MACRO C PIN A PORT LAYER M1 ; POLYGON MASK 1 0 0 1 0 1 1 ; END END A END C",
+            "UNITS DATABASE MICRONS 0 ; END UNITS"
+        ]
+        for statement in statements {
+            #expect(throws: LEFError.self) {
+                try LEFLibraryReader.read(Data("VERSION 5.8 ; \(statement) END LIBRARY".utf8))
+            }
+        }
+    }
+
+    @Test func viaHeaderRetainsFirstPhysicalLayer() throws {
+        for terminator in ["", ";"] {
+            let source = """
+            VERSION 5.8 ;
+            VIA V1 DEFAULT \(terminator)
+              LAYER M1 ; RECT -0.1 -0.1 0.1 0.1 ;
+              LAYER CUT ; RECT -0.05 -0.05 0.05 0.05 ;
+              LAYER M2 ; RECT -0.1 -0.1 0.1 0.1 ;
+            END V1
+            END LIBRARY
+            """
+            let document = try LEFLibraryReader.read(Data(source.utf8))
+            #expect(document.vias[0].isDefault)
+            #expect(document.vias[0].layers.map(\.layerName) == ["M1", "CUT", "M2"])
+            #expect(document.vias[0].layers[0].rects[0].x1 == -0.1)
+            #expect(try LEFLibraryReader.read(LEFLibraryWriter.write(document)) == document)
+        }
+    }
+
     @Test func programmaticNonFiniteGridFailsBeforeWriting() {
         let document = LEFDocument(layers: [
             LEFLayerDef(name: "M1", type: .routing, pitch: .xy(x: 0.2, y: .infinity))

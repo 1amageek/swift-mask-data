@@ -5,6 +5,7 @@ enum LEFStrictValidator {
         var kind: String
         var endName: String?
         var spacingTableColumns: Int? = nil
+        var statements: Set<String> = []
     }
 
     private static let supportedStatements: Set<String> = [
@@ -36,11 +37,28 @@ enum LEFStrictValidator {
     private static let densityCommands: Set<String> = [
         "MINIMUMDENSITY", "MAXIMUMDENSITY", "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP"
     ]
+    // Match contexts implemented by the reader, so accepted statements cannot be skipped.
+    private static let retainedStatementsByScope: [String: Set<String>] = [
+        "LIBRARY": ["VERSION", "BUSBITCHARS", "DIVIDERCHAR", "PROPERTY"],
+        "UNITS": ["DATABASE"],
+        "LAYER": ["TYPE", "DIRECTION", "PITCH", "WIDTH", "SPACING", "OFFSET", "RESISTANCE",
+                  "CAPACITANCE", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA",
+                  "ENCLOSURE", "SPACINGTABLE", "MINIMUMDENSITY", "MAXIMUMDENSITY",
+                  "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP"],
+        "VIA": ["LAYER", "RECT", "POLYGON", "VIARULE", "CUTSIZE", "CUTSPACING", "ENCLOSURE",
+                "ROWCOL", "RESISTANCE"],
+        "SITE": ["CLASS", "SYMMETRY", "SIZE"],
+        "MACRO": ["CLASS", "SIZE", "SYMMETRY", "ORIGIN", "FOREIGN", "SITE", "EEQ", "SOURCE", "FIXEDMASK", "PROPERTY"],
+        "PIN": ["DIRECTION", "USE", "SHAPE", "ANTENNADIFFAREA", "ANTENNAGATEAREA", "ANTENNAMODEL", "TAPERRULE", "PROPERTY"],
+        "PORT": ["CLASS", "LAYER", "RECT", "POLYGON", "VIA"],
+        "OBS": ["LAYER", "RECT", "POLYGON"]
+    ]
 
     static func validate(_ tokens: [String]) throws {
         var scopes: [Scope] = []
         var index = 0
         var libraryEnded = false
+        var libraryStatements: Set<String> = []
 
         while index < tokens.count {
             let command = tokens[index].uppercased()
@@ -71,6 +89,9 @@ enum LEFStrictValidator {
             }
 
             if let opening = try openingScope(command: command, tokens: tokens, index: index, scopes: scopes) {
+                if command == "UNITS", !libraryStatements.insert(command).inserted {
+                    throw LEFError.unsupportedCommand("repeated UNITS")
+                }
                 scopes.append(opening.scope)
                 index = opening.nextIndex
                 continue
@@ -81,6 +102,10 @@ enum LEFStrictValidator {
             }
             guard supportedStatements.contains(command) else {
                 throw LEFError.unsupportedCommand(command)
+            }
+            let scopeKind = scopes.last?.kind ?? "LIBRARY"
+            guard retainedStatementsByScope[scopeKind]?.contains(command) == true else {
+                throw LEFError.unsupportedCommand("\(command) in \(scopeKind)")
             }
             if densityCommands.contains(command), scopes.last?.kind != "LAYER" {
                 throw LEFError.invalidStructure("\(command) is only valid inside a LAYER")
@@ -94,7 +119,19 @@ enum LEFStrictValidator {
                 throw LEFError.missingSemicolon(command: command)
             }
             let tableColumns = scopes.last?.spacingTableColumns
-            try validateValues(command: command, values: values, spacingTableColumns: tableColumns)
+            try validateValues(command: command, values: values, spacingTableColumns: tableColumns, scopeKind: scopeKind)
+            let repeatedGeometry = ["VIA", "PORT", "OBS"].contains(scopeKind)
+                && ["LAYER", "RECT", "POLYGON", "VIA"].contains(command)
+            let repeatedTableRow = command == "WIDTH" && tableColumns != nil
+            if command != "PROPERTY", !repeatedGeometry, !repeatedTableRow {
+                let inserted: Bool
+                if let scopeIndex = scopes.indices.last {
+                    inserted = scopes[scopeIndex].statements.insert(command).inserted
+                } else {
+                    inserted = libraryStatements.insert(command).inserted
+                }
+                guard inserted else { throw LEFError.unsupportedCommand("repeated \(command) in \(scopeKind)") }
+            }
             if let scopeIndex = scopes.indices.last, scopes[scopeIndex].kind == "LAYER" {
                 if command == "SPACINGTABLE" {
                     scopes[scopeIndex].spacingTableColumns = values.count - 1
@@ -157,7 +194,12 @@ enum LEFStrictValidator {
             }
             let name = tokens[index + 1]
             var next = index + 2
-            while next < tokens.count, tokens[next] != ";", isOpeningQualifier(tokens[next]) { next += 1 }
+            while next < tokens.count, tokens[next] != ";", isOpeningQualifier(tokens[next]) {
+                guard command == "VIA" else {
+                    throw LEFError.unsupportedCommand("\(tokens[next]) qualifier on \(command)")
+                }
+                next += 1
+            }
             if next < tokens.count, tokens[next] == ";" { next += 1 }
             return (Scope(kind: command, endName: name), next)
         }
@@ -179,7 +221,8 @@ enum LEFStrictValidator {
     private static func validateValues(
         command: String,
         values: [String],
-        spacingTableColumns: Int?
+        spacingTableColumns: Int?,
+        scopeKind: String
     ) throws {
         guard !values.isEmpty || command == "FIXEDMASK" else {
             throw LEFError.missingValue(command: command)
@@ -194,7 +237,7 @@ enum LEFStrictValidator {
                 throw LEFError.invalidStructure("unsupported TYPE value \(values.first ?? "")")
             }
         case "DIRECTION":
-            let allowed = ["HORIZONTAL", "VERTICAL", "INPUT", "OUTPUT", "INOUT", "FEEDTHRU"]
+            let allowed = scopeKind == "PIN" ? ["INPUT", "OUTPUT", "INOUT", "FEEDTHRU"] : ["HORIZONTAL", "VERTICAL"]
             guard values.count == 1, allowed.contains(values[0].uppercased()) else {
                 throw LEFError.invalidStructure("unsupported DIRECTION value \(values.first ?? "")")
             }
@@ -202,7 +245,7 @@ enum LEFStrictValidator {
             guard values.count == 2, values[0].uppercased() == "MICRONS" else {
                 throw LEFError.missingValue(command: command)
             }
-            try requireNumbers([values[1]], command: command)
+            try requirePositiveNumbers([values[1]], command: command)
         case "SIZE":
             guard values.count == 3, values[1].uppercased() == "BY" else {
                 throw LEFError.missingValue(command: command)
@@ -244,25 +287,60 @@ enum LEFStrictValidator {
                 throw LEFError.invalidNumber(command: command, value: values.first ?? "")
             }
         case "RECT":
+            if values.first?.uppercased() == "MASK" {
+                guard values.count >= 2, let mask = Int(values[1]), mask > 0 else {
+                    throw LEFError.invalidNumber(command: "RECT MASK", value: values.dropFirst().first ?? "")
+                }
+            }
             let coordinates = values.first?.uppercased() == "MASK" ? Array(values.dropFirst(2)) : values
             guard coordinates.count == 4 else { throw LEFError.missingValue(command: command) }
             try requireNumbers(coordinates, command: command)
         case "POLYGON":
-            let coordinates = values.first?.uppercased() == "MASK" ? Array(values.dropFirst(2)) : values
+            guard values.first?.uppercased() != "MASK" else {
+                throw LEFError.unsupportedCommand("POLYGON MASK")
+            }
+            let coordinates = values
             guard coordinates.count >= 6, coordinates.count.isMultiple(of: 2) else {
                 throw LEFError.missingValue(command: command)
             }
             try requireNumbers(coordinates, command: command)
         case "ENCLOSURE":
-            guard values.count == 2 || values.count == 4 else { throw LEFError.missingValue(command: command) }
+            guard values.count == (scopeKind == "VIA" ? 4 : 2) else { throw LEFError.missingValue(command: command) }
             try requireNumbers(values, command: command)
         case "ROWCOL":
             guard values.count == 2, values.allSatisfy({ Int($0) != nil }) else {
                 throw LEFError.invalidNumber(command: command, value: values.first ?? "")
             }
         case "RESISTANCE", "CAPACITANCE":
-            guard let value = values.last else { throw LEFError.missingValue(command: command) }
+            let prefix = command == "RESISTANCE" ? "RPERSQ" : "CPERSQDIST"
+            guard (scopeKind == "VIA" && values.count == 1) ||
+                  (scopeKind == "LAYER" && values.count == 2 && values[0].uppercased() == prefix),
+                  let value = values.last else { throw LEFError.missingValue(command: command) }
             try requireNumbers([value], command: command)
+        case "CLASS":
+            let allowed: [String]
+            switch scopeKind {
+            case "MACRO": allowed = ["CORE", "PAD", "BLOCK", "RING", "ENDCAP", "COVER"]
+            case "SITE": allowed = ["CORE", "PAD"]
+            default: allowed = ["NONE", "CORE", "BUMP"]
+            }
+            guard values.count == 1 || (scopeKind == "MACRO" && values.count == 2),
+                  allowed.contains(values[0].uppercased()) else {
+                throw LEFError.invalidStructure("unrepresentable CLASS in \(scopeKind)")
+            }
+        case "USE", "SHAPE":
+            let allowed = command == "USE" ? ["SIGNAL", "POWER", "GROUND", "CLOCK", "ANALOG"] : ["ABUTMENT", "RING", "FEEDTHRU"]
+            guard values.count == 1, allowed.contains(values[0].uppercased()) else {
+                throw LEFError.invalidStructure("unrepresentable \(command)")
+            }
+        case "SYMMETRY":
+            guard values.allSatisfy({ ["X", "Y", "R90"].contains($0.uppercased()) }) else {
+                throw LEFError.invalidStructure("unrepresentable SYMMETRY")
+            }
+        case "LAYER", "SITE", "EEQ", "SOURCE", "ANTENNAMODEL", "TAPERRULE", "VIARULE", "BUSBITCHARS", "DIVIDERCHAR":
+            guard values.count == 1 else { throw LEFError.missingValue(command: command) }
+        case "FIXEDMASK":
+            guard values.isEmpty else { throw LEFError.invalidStructure("FIXEDMASK takes no values") }
         case "MINIMUMDENSITY", "MAXIMUMDENSITY":
             guard values.count == 1 else { throw LEFError.missingValue(command: command) }
             try requireNumbers(values, command: command)

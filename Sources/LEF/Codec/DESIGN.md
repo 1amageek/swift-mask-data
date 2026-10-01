@@ -10,6 +10,10 @@ Parent: [LEF](../DESIGN.md). No children.
 Parse and write supported standard declarations. Reject unsupported commands and
 numeric arity before a parser branch can discard input. Engines own capability
 selection and qualification.
+Statements are accepted only in contexts whose parser retains them. Unmodeled
+global controls, layer properties and obstruction via statements fail explicitly
+until the standard schema and parser own their meaning. VIA header qualifiers
+end before the first body statement, with or without a header semicolon.
 
 ## Related Designs
 
