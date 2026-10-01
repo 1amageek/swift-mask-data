@@ -144,6 +144,7 @@ struct OASISLibraryReaderTests {
         writer.writeMagic()
         writer.writeByte(OASISRecordType.start.rawValue)
         try writer.writeAString("1.0")
+        let unitOffset = writer.data.count
         writer.writeReal(0)
         writer.writeUnsignedInteger(0)
         writer.writeByte(OASISRecordType.end.rawValue)
@@ -154,11 +155,12 @@ struct OASISLibraryReaderTests {
             _ = try OASISLibraryReader.read(writer.data)
             Issue.record("Expected invalid OASIS unit scale to throw")
         } catch let error as OASISError {
-            guard case .invalidUnits(_, let reason) = error else {
+            guard case .invalidUnits(let offset, let reason) = error else {
                 Issue.record("Expected OASISError.invalidUnits, got \(error)")
                 return
             }
-            #expect(reason.contains("greater than zero"))
+            #expect(offset == unitOffset)
+            #expect(!reason.isEmpty)
         }
     }
 
