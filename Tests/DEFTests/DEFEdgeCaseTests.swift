@@ -226,10 +226,10 @@ struct DEFIRConverterEdgeCaseTests {
         #expect(lib.cells[0].elements.isEmpty)
     }
 
-    @Test func orientationRoundTrip() {
+    @Test func orientationRoundTrip() throws {
         for orient in DEFOrientation.allCases {
             let t = DEFIRConverter.orientationToTransform(orient)
-            let back = DEFIRConverter.transformToOrientation(t)
+            let back = try DEFIRConverter.transformToOrientation(t)
             #expect(back == orient, "Failed for orientation \(orient.rawValue)")
         }
     }

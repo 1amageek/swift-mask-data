@@ -3,6 +3,7 @@ import CircuiteFoundation
 import LayoutIR
 
 public enum DEFIRConverterError: Error, Equatable, Sendable {
+    case unrepresentableTransform
     case tooManyLayers(count: Int)
     case missingLayerMapping(layerName: String)
     case invalidLayerNumber(layerName: String, layerNumber: Int16)
@@ -180,7 +181,7 @@ public enum DEFIRConverter {
     }
 
     /// Convert an IRLibrary to a DEFDocument.
-    public static func toDEFDocument(_ library: IRLibrary) -> DEFDocument {
+    public static func toDEFDocument(_ library: IRLibrary) throws -> DEFDocument {
         var doc = DEFDocument(
             designName: library.name,
             dbuPerMicron: library.databaseUnitScale.databaseUnitsPerMicrometer
@@ -196,7 +197,7 @@ public enum DEFIRConverter {
         for element in topCell.elements {
             switch element {
             case .cellRef(let ref):
-                let orient = transformToOrientation(ref.transform)
+                let orient = try transformToOrientation(ref.transform)
                 doc.components.append(DEFComponent(
                     name: propertyValue(ref.properties, key: componentNamePropertyKey) ?? ref.cellName,
                     macro: ref.cellName,
@@ -216,7 +217,7 @@ public enum DEFIRConverter {
                     netName: propertyValue(text.properties, key: pinNetNamePropertyKey),
                     x: text.position.x,
                     y: text.position.y,
-                    orientation: transformToOrientation(text.transform),
+                    orientation: try transformToOrientation(text.transform),
                     placementStatus: pinPlacementStatus(from: text.properties) ?? .placed
                 ))
             case .path(let path):
@@ -716,35 +717,28 @@ public enum DEFIRConverter {
 
     public static func orientationToTransform(_ orient: DEFOrientation) -> IRTransform {
         switch orient {
-        case .n:  return IRTransform(mirrorX: false, magnification: 1.0, angle: 0)
-        case .s:  return IRTransform(mirrorX: false, magnification: 1.0, angle: 180)
-        case .e:  return IRTransform(mirrorX: false, magnification: 1.0, angle: 90)
-        case .w:  return IRTransform(mirrorX: false, magnification: 1.0, angle: 270)
-        case .fn: return IRTransform(mirrorX: true, magnification: 1.0, angle: 0)
-        case .fs: return IRTransform(mirrorX: true, magnification: 1.0, angle: 180)
-        case .fe: return IRTransform(mirrorX: true, magnification: 1.0, angle: 90)
-        case .fw: return IRTransform(mirrorX: true, magnification: 1.0, angle: 270)
+        case .n:  return IRTransform(mirrorX: false, angle: 0)
+        case .s:  return IRTransform(mirrorX: false, angle: 180)
+        case .w:  return IRTransform(mirrorX: false, angle: 90)
+        case .e:  return IRTransform(mirrorX: false, angle: 270)
+        case .fn: return IRTransform(mirrorX: true, angle: 180)
+        case .fs: return IRTransform(mirrorX: true, angle: 0)
+        case .fw: return IRTransform(mirrorX: true, angle: 90)
+        case .fe: return IRTransform(mirrorX: true, angle: 270)
         }
     }
 
-    public static func transformToOrientation(_ t: IRTransform) -> DEFOrientation {
-        let angle = ((Int(t.angle) % 360) + 360) % 360
-        if t.mirrorX {
-            switch angle {
-            case 0: return .fn
-            case 90: return .fe
-            case 180: return .fs
-            case 270: return .fw
-            default: return .fn
-            }
-        } else {
-            switch angle {
-            case 0: return .n
-            case 90: return .e
-            case 180: return .s
-            case 270: return .w
-            default: return .n
-            }
+    public static func transformToOrientation(_ transform: IRTransform) throws -> DEFOrientation {
+        guard transform.angle.isFinite, transform.magnification == 1 else {
+            throw DEFIRConverterError.unrepresentableTransform
+        }
+        let remainder = transform.angle.truncatingRemainder(dividingBy: 360)
+        switch remainder {
+        case 0: return transform.mirrorX ? .fs : .n
+        case 90, -270: return transform.mirrorX ? .fw : .w
+        case 180, -180: return transform.mirrorX ? .fn : .s
+        case 270, -90: return transform.mirrorX ? .fe : .e
+        default: throw DEFIRConverterError.unrepresentableTransform
         }
     }
 }

@@ -69,7 +69,8 @@ let package = Package(
             dependencies: [
                 "LayoutIR",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
-            ]
+            ],
+            exclude: ["DESIGN.md", "Interchange/DESIGN.md"]
         ),
         .target(
             name: "DXF",

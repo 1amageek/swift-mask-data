@@ -38,10 +38,52 @@ struct DEFDocumentTests {
 @Suite("DEFOrientation")
 struct DEFOrientationTests {
 
-    @Test func allOrientationsMapped() {
+    @Test("orientation meaning matches LEF/DEF rather than only round trip")
+    func standardOrientationMeaning() {
+        let meanings: [(DEFOrientation, Bool, Double)] = [
+            (.n, false, 0), (.s, false, 180), (.w, false, 90), (.e, false, 270),
+            (.fn, true, 180), (.fs, true, 0), (.fw, true, 90), (.fe, true, 270)
+        ]
+        for (orientation, mirror, angle) in meanings {
+            let transform = DEFIRConverter.orientationToTransform(orientation)
+            #expect(transform.mirrorX == mirror)
+            #expect(transform.angle == angle)
+            #expect(transform.magnification == 1)
+        }
+    }
+
+    @Test("inverse conversion rejects transforms DEF cannot represent")
+    func unrepresentableTransforms() throws {
+        var transforms = [Double.nan, .infinity, -.infinity, 0.5, 89.999, 360.5,
+                          .leastNonzeroMagnitude, -.leastNonzeroMagnitude].map { IRTransform(angle: $0) }
+        transforms += [0, 2, Double.nan, .infinity].map { IRTransform(magnification: $0) }
+        for transform in transforms {
+            #expect(throws: DEFIRConverterError.unrepresentableTransform) {
+                try DEFIRConverter.transformToOrientation(transform)
+            }
+            let elements: [IRElement] = [
+                .cellRef(.init(cellName: "cell", origin: .init(x: 0, y: 0), transform: transform)),
+                .text(.init(layer: 1, transform: transform, position: .init(x: 0, y: 0), string: "PIN"))
+            ]
+            for element in elements {
+                let library = IRLibrary(name: "top",
+                    databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
+                    cells: [.init(name: "top", elements: [element])])
+                #expect(throws: DEFIRConverterError.unrepresentableTransform) {
+                    try DEFIRConverter.toDEFDocument(library)
+                }
+            }
+        }
+        #expect(try DEFIRConverter.transformToOrientation(.init(angle: -90)) == .e)
+        #expect(try DEFIRConverter.transformToOrientation(.init(angle: 450)) == .w)
+        #expect(try DEFIRConverter.transformToOrientation(.init(mirrorX: true, angle: -270)) == .fw)
+        #expect(try DEFIRConverter.transformToOrientation(.init(mirrorX: true, angle: 720)) == .fs)
+    }
+
+    @Test func allOrientationsMapped() throws {
         for orient in DEFOrientation.allCases {
             let t = DEFIRConverter.orientationToTransform(orient)
-            let back = DEFIRConverter.transformToOrientation(t)
+            let back = try DEFIRConverter.transformToOrientation(t)
             #expect(back == orient)
         }
     }
@@ -320,7 +362,7 @@ struct DEFIRConverterTests {
             ]
         )
         let library = try DEFIRConverter.toIRLibrary(original)
-        let decoded = DEFIRConverter.toDEFDocument(library)
+        let decoded = try DEFIRConverter.toDEFDocument(library)
 
         #expect(decoded.designName == "chip")
         #expect(decoded.dieArea?.boundingBox?.x2 == 10000)
@@ -352,7 +394,7 @@ struct DEFIRConverterTests {
             ]
         )
 
-        let document = DEFIRConverter.toDEFDocument(library)
+        let document = try DEFIRConverter.toDEFDocument(library)
 
         #expect(document.components.count == 1)
         #expect(document.components[0].name == "INV")
@@ -430,7 +472,7 @@ struct DEFIRConverterTests {
         }
         #expect(routedPaths.count == 2)
 
-        let decoded = DEFIRConverter.toDEFDocument(library)
+        let decoded = try DEFIRConverter.toDEFDocument(library)
 
         #expect(decoded.pins.count == 1)
         #expect(decoded.pins[0].name == "clk")
@@ -504,7 +546,7 @@ struct DEFIRConverterTests {
         #expect(paths.count == 2)
         #expect(paths[0].layer != paths[1].layer)
 
-        let decoded = DEFIRConverter.toDEFDocument(library)
+        let decoded = try DEFIRConverter.toDEFDocument(library)
         #expect(decoded.nets[0].routing[0].layerName == "li1")
         #expect(decoded.nets[1].routing[0].layerName == "met1")
     }
@@ -657,7 +699,7 @@ struct DEFIRConverterTests {
         )
 
         let library = try DEFIRConverter.toIRLibrary(original)
-        let decoded = DEFIRConverter.toDEFDocument(library)
+        let decoded = try DEFIRConverter.toDEFDocument(library)
 
         #expect(decoded.viaDefs.count == 1)
         #expect(decoded.viaDefs[0].name == "DEFVIA")
