@@ -79,7 +79,8 @@ let package = Package(
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
-        .target(name: "MaskGeometry", dependencies: ["LayoutIR"]),
+        .target(name: "MaskGeometry", dependencies: ["LayoutIR"],
+                exclude: ["DESIGN.md", "RectilinearDecomposition/DESIGN.md"]),
         .testTarget(
             name: "LayoutIRTests",
             dependencies: [

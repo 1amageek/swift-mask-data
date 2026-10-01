@@ -117,34 +117,40 @@ enum RegionBoolean {
     }
 
     private static func decompose(_ polygon: IRBoundary) -> [Band] {
-        let points = normalizedPoints(polygon.points)
-        guard points.count >= 3 else { return [] }
-
-        let sortedYs = Array(Set(points.map(\.y))).sorted()
-        guard sortedYs.count >= 2 else { return [] }
-
         var bands: [Band] = []
+        decompose(polygon, chargeEdge: {}, emitBand: { bands.append($0) }, checkCancellation: {})
+        return bands
+    }
 
+    /// Shared traversal: callers own resource admission and output publication.
+    static func decompose(
+        _ polygon: IRBoundary,
+        chargeEdge: () throws -> Void,
+        emitBand: (Band) throws -> Void,
+        checkCancellation: () throws -> Void
+    ) rethrows {
+        try checkCancellation()
+        let points = normalizedPoints(polygon.points)
+        guard points.count >= 3 else { return }
+        let sortedYs = Array(Set(points.map(\.y))).sorted()
+        try checkCancellation()
+        guard sortedYs.count >= 2 else { return }
         for index in 0..<(sortedYs.count - 1) {
             let yMin = sortedYs[index]
             let yMax = sortedYs[index + 1]
-            guard yMin < yMax else { continue }
-
-            let sampleY = (Double(yMin) + Double(yMax)) / 2.0
-            let xs = verticalIntersections(in: points, at: sampleY)
-
+            let sampleY = (Double(yMin) + Double(yMax)) / 2
+            let xs = try verticalIntersections(in: points, at: sampleY, chargeEdge: chargeEdge)
+            try checkCancellation()
             var pairIndex = 0
             while pairIndex + 1 < xs.count {
                 let xMin = xs[pairIndex]
                 let xMax = xs[pairIndex + 1]
                 if xMin < xMax {
-                    bands.append(Band(xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax))
+                    try emitBand(Band(xMin: xMin, xMax: xMax, yMin: yMin, yMax: yMax))
                 }
                 pairIndex += 2
             }
         }
-
-        return bands
     }
 
     private static func normalizedPoints(_ points: [IRPoint]) -> [IRPoint] {
@@ -154,10 +160,13 @@ enum RegionBoolean {
         return Array(points.dropLast())
     }
 
-    private static func verticalIntersections(in points: [IRPoint], at sampleY: Double) -> [Int32] {
+    private static func verticalIntersections(
+        in points: [IRPoint], at sampleY: Double, chargeEdge: () throws -> Void
+    ) rethrows -> [Int32] {
         var xs: [Int32] = []
 
         for index in points.indices {
+            try chargeEdge()
             let nextIndex = index == points.index(before: points.endIndex) ? points.startIndex : points.index(after: index)
             let p1 = points[index]
             let p2 = points[nextIndex]

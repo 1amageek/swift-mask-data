@@ -23,6 +23,7 @@ owned by the [LEF module design](Sources/LEF/DESIGN.md).
 |---|---|---|---|---|
 | [LSI](../DESIGN.md) | Parent | Exact standard data and explicit loss | Standalone platform composition | Codec success does not qualify a process |
 | [LEF](Sources/LEF/DESIGN.md) | Child | Typed parsing and geometry conversion | Physical interchange boundary | Off-grid source geometry is rejected |
+| [MaskGeometry](Sources/MaskGeometry/DESIGN.md) | Child | Exact bounded decomposition | Native geometry consumers | Electrical semantics remain downstream |
 | [DEF](Sources/DEF/DESIGN.md) | Child | Standard orientation and typed interchange | Shared native geometry meaning | Nonrepresentable transforms are errors |
 | [TechIR](Sources/TechIR/DESIGN.md) | Child | Format-neutral layer and grid values | Shared typed process declarations | Conversion must retain both grid axes |
 | [CircuiteFoundation](../CircuiteFoundation/DESIGN.md) | Depends on | Validated unit scale | Shared identity and units | Domain rules remain outside the dependency floor |
