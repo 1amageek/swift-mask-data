@@ -1,4 +1,5 @@
 import Foundation
+import TechIR
 
 /// Writes a LEFDocument to LEF text format.
 public enum LEFLibraryWriter {
@@ -85,7 +86,7 @@ public enum LEFLibraryWriter {
             lines.append("  DIRECTION \(dir.rawValue) ;")
         }
         if let p = layer.pitch {
-            lines.append("  PITCH \(formatNum(p)) ;")
+            lines.append("  PITCH \(formatAxis(p)) ;")
         }
         if let w = layer.width {
             lines.append("  WIDTH \(formatNum(w)) ;")
@@ -94,7 +95,7 @@ public enum LEFLibraryWriter {
             lines.append("  SPACING \(formatNum(s)) ;")
         }
         if let o = layer.offset {
-            lines.append("  OFFSET \(formatNum(o)) ;")
+            lines.append("  OFFSET \(formatAxis(o)) ;")
         }
         if let r = layer.resistance {
             lines.append("  RESISTANCE RPERSQ \(formatNum(r)) ;")
@@ -307,6 +308,13 @@ public enum LEFLibraryWriter {
     }
 
     // MARK: - Helpers
+
+    private static func formatAxis(_ value: IRTechAxisValue) -> String {
+        switch value {
+        case .scalar(let scalar): formatNum(scalar)
+        case .xy(let x, let y): "\(formatNum(x)) \(formatNum(y))"
+        }
+    }
 
     private static func formatNum(_ val: Double) -> String {
         if val == val.rounded() && val.magnitude < 1e15 {

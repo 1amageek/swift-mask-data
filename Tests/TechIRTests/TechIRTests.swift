@@ -29,7 +29,7 @@ struct IRTechLibraryTests {
                     gdsLayer: 10,
                     gdsDatatype: 0,
                     direction: .horizontal,
-                    pitch: 0.28,
+                    pitch: .scalar(0.28),
                     width: 0.14,
                     spacing: 0.14,
                     color: IRTechColor(red: 0.2, green: 0.4, blue: 0.8),

@@ -4,6 +4,7 @@ enum LEFStrictValidator {
     private struct Scope {
         var kind: String
         var endName: String?
+        var spacingTableColumns: Int? = nil
     }
 
     private static let supportedStatements: Set<String> = [
@@ -92,7 +93,15 @@ enum LEFStrictValidator {
             if values.contains(where: { $0.uppercased() == "END" }) {
                 throw LEFError.missingSemicolon(command: command)
             }
-            try validateValues(command: command, values: values)
+            let tableColumns = scopes.last?.spacingTableColumns
+            try validateValues(command: command, values: values, spacingTableColumns: tableColumns)
+            if let scopeIndex = scopes.indices.last, scopes[scopeIndex].kind == "LAYER" {
+                if command == "SPACINGTABLE" {
+                    scopes[scopeIndex].spacingTableColumns = values.count - 1
+                } else if command != "WIDTH" {
+                    scopes[scopeIndex].spacingTableColumns = nil
+                }
+            }
             index = semicolon + 1
         }
 
@@ -105,6 +114,11 @@ enum LEFStrictValidator {
     }
 
     static func validate(_ layer: LEFLayerDef) throws {
+        for (command, value) in [("PITCH", layer.pitch), ("OFFSET", layer.offset)] {
+            if let value, !value.x.isFinite || !value.y.isFinite {
+                throw LEFError.invalidNumber(command: command, value: "non-finite")
+            }
+        }
         if let minimum = layer.minimumDensity {
             try validateDensity(minimum, command: "MINIMUMDENSITY")
         }
@@ -162,7 +176,11 @@ enum LEFStrictValidator {
         return nil
     }
 
-    private static func validateValues(command: String, values: [String]) throws {
+    private static func validateValues(
+        command: String,
+        values: [String],
+        spacingTableColumns: Int?
+    ) throws {
         guard !values.isEmpty || command == "FIXEDMASK" else {
             throw LEFError.missingValue(command: command)
         }
@@ -190,6 +208,28 @@ enum LEFStrictValidator {
                 throw LEFError.missingValue(command: command)
             }
             try requireNumbers([values[0], values[2]], command: command)
+        case "PITCH", "OFFSET":
+            guard values.count == 1 || values.count == 2 else {
+                throw LEFError.invalidStructure("\(command) requires one scalar or two axis values")
+            }
+            try requireNumbers(values, command: command)
+        case "SPACINGTABLE":
+            guard values.first?.uppercased() == "PARALLELRUNLENGTH", values.count >= 2 else {
+                throw LEFError.unsupportedCommand("SPACINGTABLE without PARALLELRUNLENGTH")
+            }
+            try requireNumbers(Array(values.dropFirst()), command: command)
+        case "WIDTH":
+            let expectedCount = spacingTableColumns.map { $0 + 1 } ?? 1
+            guard values.count == expectedCount else {
+                throw LEFError.invalidStructure("WIDTH requires \(expectedCount) values in its current context")
+            }
+            try requireNumbers(values, command: command)
+        case "SPACING", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA",
+             "ANTENNADIFFAREA", "ANTENNAGATEAREA", "MANUFACTURINGGRID":
+            guard values.count == 1 else {
+                throw LEFError.invalidStructure("\(command) requires one supported scalar value")
+            }
+            try requireNumbers(values, command: command)
         case "ORIGIN", "CUTSIZE", "CUTSPACING":
             guard values.count == 2 else { throw LEFError.missingValue(command: command) }
             try requireNumbers(values, command: command)

@@ -19,7 +19,7 @@ struct LEFTechIRConverterTests {
                     name: "M1",
                     type: .routing,
                     direction: .horizontal,
-                    pitch: 0.28,
+                    pitch: .scalar(0.28),
                     width: 0.14,
                     spacing: 0.14,
                     resistance: 0.38,
@@ -38,7 +38,7 @@ struct LEFTechIRConverterTests {
                     name: "M2",
                     type: .routing,
                     direction: .vertical,
-                    pitch: 0.28,
+                    pitch: .scalar(0.28),
                     width: 0.14,
                     spacing: 0.14
                 ),
@@ -82,7 +82,7 @@ struct LEFTechIRConverterTests {
         #expect(lib.layers[1].name == "M1")
         #expect(lib.layers[1].type == .routing)
         #expect(lib.layers[1].direction == .horizontal)
-        #expect(lib.layers[1].pitch == 0.28)
+        #expect(lib.layers[1].pitch == .scalar(0.28))
         #expect(lib.layers[1].width == 0.14)
         #expect(lib.layers[1].resistance == 0.38)
         #expect(lib.layers[2].name == "VIA1")
@@ -130,7 +130,7 @@ struct LEFTechIRConverterTests {
         #expect(reconstructed.layers[1].name == "M1")
         #expect(reconstructed.layers[1].type == .routing)
         #expect(reconstructed.layers[1].direction == .horizontal)
-        #expect(reconstructed.layers[1].pitch == 0.28)
+        #expect(reconstructed.layers[1].pitch == .scalar(0.28))
         #expect(reconstructed.vias.count == 1)
         #expect(reconstructed.vias[0].name == "VIA1_DEFAULT")
         #expect(reconstructed.sites.count == 1)

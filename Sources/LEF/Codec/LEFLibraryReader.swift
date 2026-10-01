@@ -1,4 +1,5 @@
 import Foundation
+import TechIR
 
 /// Parses LEF text data into a LEFDocument.
 public enum LEFLibraryReader {
@@ -141,10 +142,10 @@ public enum LEFLibraryReader {
         var i = start + 1
         var type: LEFLayerDef.LayerType = .routing
         var direction: LEFLayerDef.Direction?
-        var pitch: Double?
+        var pitch: IRTechAxisValue?
         var width: Double?
         var spacing: Double?
-        var offset: Double?
+        var offset: IRTechAxisValue?
         var resistance: Double?
         var capacitance: Double?
         var edgeCapacitance: Double?
@@ -194,10 +195,13 @@ public enum LEFLibraryReader {
                 i = skipSemicolon(tokens, i)
             case "PITCH":
                 i += 1
-                if i < tokens.count { pitch = Double(tokens[i]); i += 1 }
-                // Handle two-value pitch (e.g. PITCH 0.28 0.28)
-                if i < tokens.count && tokens[i] != ";" {
-                    if Double(tokens[i]) != nil { i += 1 }
+                let first = try validatedDouble(tokens[i], command: upper)
+                i += 1
+                if tokens[i] != ";" {
+                    pitch = .xy(x: first, y: try validatedDouble(tokens[i], command: upper))
+                    i += 1
+                } else {
+                    pitch = .scalar(first)
                 }
                 i = skipSemicolon(tokens, i)
             case "WIDTH":
@@ -211,10 +215,13 @@ public enum LEFLibraryReader {
                 i = skipSemicolon(tokens, i)
             case "OFFSET":
                 i += 1
-                if i < tokens.count { offset = Double(tokens[i]); i += 1 }
-                // Handle two-value offset
-                if i < tokens.count && tokens[i] != ";" {
-                    if Double(tokens[i]) != nil { i += 1 }
+                let first = try validatedDouble(tokens[i], command: upper)
+                i += 1
+                if tokens[i] != ";" {
+                    offset = .xy(x: first, y: try validatedDouble(tokens[i], command: upper))
+                    i += 1
+                } else {
+                    offset = .scalar(first)
                 }
                 i = skipSemicolon(tokens, i)
             case "RESISTANCE":

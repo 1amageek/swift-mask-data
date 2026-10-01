@@ -84,7 +84,7 @@ struct LEFLibraryReaderTests {
         #expect(layer.name == "metal1")
         #expect(layer.type == .routing)
         #expect(layer.direction == .horizontal)
-        #expect(layer.pitch == 0.28)
+        #expect(layer.pitch == .scalar(0.28))
         #expect(layer.width == 0.14)
         #expect(layer.spacing == 0.14)
     }
@@ -218,7 +218,7 @@ struct LEFRoundTripTests {
             version: "5.8",
             dbuPerMicron: 1000,
             layers: [
-                LEFLayerDef(name: "metal1", type: .routing, direction: .horizontal, pitch: 0.28, width: 0.14),
+                LEFLayerDef(name: "metal1", type: .routing, direction: .horizontal, pitch: .scalar(0.28), width: 0.14),
             ],
             macros: [
                 LEFMacroDef(name: "INV", macroClass: .core, width: 1.4, height: 2.8),

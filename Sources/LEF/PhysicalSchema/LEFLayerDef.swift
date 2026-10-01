@@ -1,11 +1,13 @@
+import TechIR
+
 public struct LEFLayerDef: Hashable, Sendable, Codable {
     public var name: String
     public var type: LayerType
     public var direction: Direction?
-    public var pitch: Double?
+    public var pitch: IRTechAxisValue?
     public var width: Double?
     public var spacing: Double?
-    public var offset: Double?
+    public var offset: IRTechAxisValue?
     public var resistance: Double?
     public var capacitance: Double?
     public var edgeCapacitance: Double?
@@ -44,8 +46,8 @@ public struct LEFLayerDef: Hashable, Sendable, Codable {
     }
 
     public init(name: String, type: LayerType, direction: Direction? = nil,
-                pitch: Double? = nil, width: Double? = nil, spacing: Double? = nil,
-                offset: Double? = nil, resistance: Double? = nil,
+                pitch: IRTechAxisValue? = nil, width: Double? = nil, spacing: Double? = nil,
+                offset: IRTechAxisValue? = nil, resistance: Double? = nil,
                 capacitance: Double? = nil, edgeCapacitance: Double? = nil,
                 thickness: Double? = nil, minwidth: Double? = nil,
                 maxwidth: Double? = nil, area: Double? = nil,

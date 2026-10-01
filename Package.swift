@@ -54,14 +54,15 @@ let package = Package(
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
-        .target(name: "TechIR"),
+        .target(name: "TechIR", exclude: ["DESIGN.md", "TechnologyGrid/DESIGN.md"]),
         .target(
             name: "LEF",
             dependencies: [
                 "LayoutIR",
                 "TechIR",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
-            ]
+            ],
+            exclude: ["DESIGN.md", "Codec/DESIGN.md", "PhysicalSchema/DESIGN.md", "GeometryConversion/DESIGN.md"]
         ),
         .target(
             name: "DEF",

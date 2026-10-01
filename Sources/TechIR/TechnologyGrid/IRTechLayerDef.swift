@@ -5,7 +5,8 @@ public struct IRTechLayerDef: Hashable, Sendable, Codable {
     public var gdsLayer: Int?
     public var gdsDatatype: Int?
     public var direction: IRTechLayerDirection?
-    public var pitch: Double?
+    public var pitch: IRTechAxisValue?
+    public var offset: IRTechAxisValue?
     public var width: Double?
     public var spacing: Double?
     public var resistance: Double?
@@ -25,7 +26,8 @@ public struct IRTechLayerDef: Hashable, Sendable, Codable {
         gdsLayer: Int? = nil,
         gdsDatatype: Int? = nil,
         direction: IRTechLayerDirection? = nil,
-        pitch: Double? = nil,
+        pitch: IRTechAxisValue? = nil,
+        offset: IRTechAxisValue? = nil,
         width: Double? = nil,
         spacing: Double? = nil,
         resistance: Double? = nil,
@@ -45,6 +47,7 @@ public struct IRTechLayerDef: Hashable, Sendable, Codable {
         self.gdsDatatype = gdsDatatype
         self.direction = direction
         self.pitch = pitch
+        self.offset = offset
         self.width = width
         self.spacing = spacing
         self.resistance = resistance

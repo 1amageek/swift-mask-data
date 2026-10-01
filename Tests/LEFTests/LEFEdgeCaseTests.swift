@@ -2,6 +2,7 @@ import CircuiteFoundation
 import Testing
 import Foundation
 import LayoutIR
+import TechIR
 @testable import LEF
 
 @Suite("LEF Tokenizer Edge Cases")
@@ -196,9 +197,54 @@ struct LEFReaderEdgeCaseTests {
         """
         let doc = try LEFLibraryReader.read(Data(lef.utf8))
         let l = doc.layers[0]
-        #expect(abs(l.pitch! - 0.123) < 1e-9)
+        #expect(l.pitch == .scalar(0.123))
         #expect(abs(l.width! - 0.0456) < 1e-9)
         #expect(abs(l.spacing! - 0.789) < 1e-9)
+    }
+
+    @Test func twoAxisGridSurvivesStandardRoundTrip() throws {
+        let source = """
+        VERSION 5.8 ;
+        LAYER M1
+          TYPE ROUTING ;
+          DIRECTION HORIZONTAL ;
+          PITCH 0.2 0.3 ;
+          OFFSET 0.01 0.02 ;
+        END M1
+        END LIBRARY
+        """
+        let first = try LEFLibraryReader.read(Data(source.utf8))
+        let written = try LEFLibraryWriter.write(first)
+        let text = try #require(String(data: written, encoding: .utf8))
+        #expect(text.contains("PITCH 0.2 0.3 ;"))
+        #expect(text.contains("OFFSET 0.01 0.02 ;"))
+        #expect(try LEFLibraryReader.read(written) == first)
+        let technology = try LEFTechIRConverter.toIRTechLibrary(first)
+        #expect(technology.layers[0].pitch == .xy(x: 0.2, y: 0.3))
+        #expect(technology.layers[0].offset == .xy(x: 0.01, y: 0.02))
+        let restored = LEFTechIRConverter.toLEFDocument(technology)
+        #expect(restored.layers[0].pitch == first.layers[0].pitch)
+        #expect(restored.layers[0].offset == first.layers[0].offset)
+        let encoded = try JSONEncoder().encode(technology)
+        #expect(try JSONDecoder().decode(IRTechLibrary.self, from: encoded) == technology)
+    }
+
+    @Test func gridStatementArityFailsClosed() {
+        for statement in ["PITCH 0.1 0.2 0.3", "OFFSET 0.1 0.2 0.3", "WIDTH 0.1 0.2", "SPACING 0.1 0.2"] {
+            let source = "VERSION 5.8 ; LAYER M1 TYPE ROUTING ; \(statement) ; END M1 END LIBRARY"
+            #expect(throws: LEFError.self) {
+                try LEFLibraryReader.read(Data(source.utf8))
+            }
+        }
+    }
+
+    @Test func programmaticNonFiniteGridFailsBeforeWriting() {
+        let document = LEFDocument(layers: [
+            LEFLayerDef(name: "M1", type: .routing, pitch: .xy(x: 0.2, y: .infinity))
+        ])
+        #expect(throws: LEFError.invalidNumber(command: "PITCH", value: "non-finite")) {
+            try LEFLibraryWriter.write(document)
+        }
     }
 
     @Test func densityRulesRoundTripWithoutLoss() throws {
@@ -248,7 +294,7 @@ struct LEFWriterEdgeCaseTests {
         let doc = LEFDocument(
             layers: [LEFLayerDef(
                 name: "m1", type: .routing, direction: .vertical,
-                pitch: 0.28, width: 0.14, spacing: 0.14
+                pitch: .scalar(0.28), width: 0.14, spacing: 0.14
             )]
         )
         let data = try LEFLibraryWriter.write(doc)

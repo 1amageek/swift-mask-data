@@ -671,7 +671,7 @@ struct LEFKLayoutCompatTests {
         #expect(m1.thickness == 0.36)
         #expect(m1.minwidth == 0.16)
         #expect(m1.area == 0.064)
-        #expect(m1.offset == 0.17)
+        #expect(m1.offset == .scalar(0.17))
 
         let v1 = doc.layers[2]
         #expect(v1.enclosure?.overhang1 == 0.05)
