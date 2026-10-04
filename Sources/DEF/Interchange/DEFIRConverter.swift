@@ -3,6 +3,7 @@ import CircuiteFoundation
 import LayoutIR
 
 public enum DEFIRConverterError: Error, Equatable, Sendable {
+    case unsupportedRouteGeometry(netName: String, layerName: String, reason: String)
     case unrepresentableTransform
     case tooManyLayers(count: Int)
     case missingLayerMapping(layerName: String)
@@ -117,28 +118,53 @@ public enum DEFIRConverter {
         for net in doc.nets {
             for wire in net.routing {
                 let points = try validatedRegularRoutePoints(wire, netName: net.name)
-                elements.append(.path(IRPath(
-                    layer: try layerNumbers.number(for: wire.layerName),
-                    datatype: 0,
-                    pathType: .flush,
-                    width: 1,
-                    points: points,
-                    properties: regularRouteProperties(net: net, wire: wire)
-                )))
+                for index in 1..<points.count {
+                    let begin = wire.pointExtensions.isEmpty ? nil : wire.pointExtensions[index - 1]
+                    let end = wire.pointExtensions.isEmpty ? nil : wire.pointExtensions[index]
+                    // FIXME(INCOMPLETE_IMPLEMENTATION): Mixed implicit/explicit NETS extensions need
+                    // an exact preferred LEF WIDTH. DEF import is the production caller; it must fail
+                    // until both endpoint distances can be represented without the width placeholder.
+                    guard (begin == nil) == (end == nil) else {
+                        throw DEFIRConverterError.unsupportedRouteGeometry(
+                            netName: net.name, layerName: wire.layerName,
+                            reason: "Mixed implicit and explicit extensions require the exact preferred LEF WIDTH.")
+                    }
+                    var part = wire
+                    part.points = [points[index - 1], points[index]]
+                    part.viaName = index == points.count - 1 ? wire.viaName : nil
+                    elements.append(.path(IRPath(
+                        layer: try layerNumbers.number(for: wire.layerName), datatype: 0,
+                        pathType: begin == nil ? .halfWidthExtend : .customExtension,
+                        width: 1, points: part.points,
+                        properties: regularRouteProperties(net: net, wire: part),
+                        beginExtension: begin, endExtension: end)))
+                }
             }
         }
 
         for specialNet in doc.specialNets {
             for segment in specialNet.routing {
                 let points = try validatedSpecialRoutePoints(segment, netName: specialNet.name)
-                elements.append(.path(IRPath(
-                    layer: try layerNumbers.number(for: segment.layerName),
-                    datatype: 0,
-                    pathType: .flush,
-                    width: segment.width,
-                    points: points,
-                    properties: specialRouteProperties(net: specialNet, segment: segment)
-                )))
+                let coordinatePoints = segment.points.filter { $0.viaName == nil }
+                for index in 1..<points.count {
+                    let begin = coordinatePoints[index - 1].ext ?? 0
+                    let end = coordinatePoints[index].ext ?? 0
+                    var part = segment
+                    part.points = [
+                        DEFRoutePoint(x: points[index - 1].x, y: points[index - 1].y, ext: coordinatePoints[index - 1].ext),
+                        DEFRoutePoint(x: points[index].x, y: points[index].y, ext: coordinatePoints[index].ext)]
+                    if points.count == 2 { part.points = segment.points }
+                    else if index == points.count - 1, let via = segment.points.last, via.viaName != nil {
+                        part.points.append(via)
+                    }
+                    elements.append(.path(IRPath(
+                        layer: try layerNumbers.number(for: segment.layerName), datatype: 0,
+                        pathType: begin == 0 && end == 0 ? .flush : .customExtension,
+                        width: segment.width, points: [points[index - 1], points[index]],
+                        properties: specialRouteProperties(net: specialNet, segment: part),
+                        beginExtension: begin == 0 && end == 0 ? nil : begin,
+                        endExtension: begin == 0 && end == 0 ? nil : end)))
+                }
             }
         }
 
@@ -221,7 +247,7 @@ public enum DEFIRConverter {
                     placementStatus: pinPlacementStatus(from: text.properties) ?? .placed
                 ))
             case .path(let path):
-                appendRoute(path, to: &doc)
+                try appendRoute(path, to: &doc)
             default:
                 break
             }
@@ -329,7 +355,7 @@ public enum DEFIRConverter {
         return properties
     }
 
-    private static func appendRoute(_ path: IRPath, to doc: inout DEFDocument) {
+    private static func appendRoute(_ path: IRPath, to doc: inout DEFDocument) throws {
         guard let kind = propertyValue(path.properties, key: routeKindPropertyKey),
               let netName = propertyValue(path.properties, key: routeNetNamePropertyKey) else {
             return
@@ -344,18 +370,29 @@ public enum DEFIRConverter {
                 status: status,
                 layerName: layerName,
                 points: path.points,
-                viaName: propertyValue(path.properties, key: routeViaNamePropertyKey)
+                viaName: propertyValue(path.properties, key: routeViaNamePropertyKey),
+                pointExtensions: try exportedExtensions(path, regular: true, netName: netName, layerName: layerName)
             )
             let index = ensureNet(named: netName, in: &doc)
             doc.nets[index].routing.append(wire)
         case "specialNet":
             let status = statusValue.flatMap(DEFRouteSegment.RouteStatus.init(rawValue:)) ?? .routed
-            let width = propertyValue(path.properties, key: routeWidthPropertyKey)
-                .flatMap(Int32.init) ?? path.width
+            let width = path.width
             let shape = propertyValue(path.properties, key: routeShapePropertyKey)
                 .flatMap(DEFRouteSegment.RouteShape.init(rawValue:))
-            let points = propertyValue(path.properties, key: routeSpecialPointsPropertyKey)
-                .map(decodeSpecialPoints) ?? path.points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
+            let encodedPoints = propertyValue(path.properties, key: routeSpecialPointsPropertyKey).map(decodeSpecialPoints)
+            var points = encodedPoints ?? path.points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
+            if resolvedPoints(for: DEFRouteSegment(layerName: layerName, points: points)) != path.points {
+                points = path.points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
+                if let via = encodedPoints?.last, via.viaName != nil { points.append(via) }
+            }
+            let extensions = try exportedExtensions(path, regular: false, netName: netName, layerName: layerName)
+            var coordinateIndex = 0
+            for index in points.indices where points[index].viaName == nil {
+                let extensionValue = extensions[coordinateIndex]
+                if points[index].ext != nil || extensionValue != 0 { points[index].ext = extensionValue }
+                coordinateIndex += 1
+            }
             let segment = DEFRouteSegment(
                 status: status,
                 layerName: layerName,
@@ -367,6 +404,32 @@ public enum DEFIRConverter {
             doc.specialNets[index].routing.append(segment)
         default:
             return
+        }
+    }
+
+    private static func exportedExtensions(
+        _ path: IRPath, regular: Bool, netName: String, layerName: String
+    ) throws -> [Int32?] {
+        guard path.points.count == 2 else {
+            throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: layerName,
+                reason: "DEF route export requires straight segment paths.")
+        }
+        switch path.pathType {
+        case .halfWidthExtend where regular:
+            return [nil, nil]
+        case .flush:
+            return [0, 0]
+        case .customExtension:
+            guard let begin = path.beginExtension, let end = path.endExtension, begin >= 0, end >= 0 else {
+                throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName,
+                    reason: "DEF requires explicit nonnegative endpoint extensions.")
+            }
+            return [begin, end]
+        case .halfWidthExtend where path.width > 0 && path.width % 2 == 0:
+            return [path.width / 2, path.width / 2]
+        default:
+            throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: layerName,
+                reason: "DEF cannot preserve this path end-cap profile.")
         }
     }
 
@@ -586,6 +649,16 @@ public enum DEFIRConverter {
                 reason: "DEF regular route requires at least two placement points."
             )
         }
+        guard !wire.taper && wire.style == nil else {
+            throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: wire.layerName,
+                reason: "TAPER and STYLE profiles require additional geometry semantics.")
+        }
+        guard wire.pointExtensions.isEmpty || wire.pointExtensions.count == wire.points.count,
+              wire.pointExtensions.allSatisfy({ $0.map { $0 >= 0 } ?? true }) else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: wire.layerName,
+                reason: "Regular route extensions must align with points and be nonnegative.")
+        }
+        try validateOrthogonalSegments(wire.points, netName: netName, layerName: wire.layerName)
         return wire.points
     }
 
@@ -607,6 +680,10 @@ public enum DEFIRConverter {
                 reason: "DEF special route requires a positive width."
             )
         }
+        guard segment.width % 2 == 0 else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: segment.layerName,
+                reason: "SPECIALNETS requires an even DBU width.")
+        }
         let points = resolvedPoints(for: segment)
         guard points.count >= 2 else {
             throw DEFIRConverterError.invalidRouteGeometry(
@@ -615,7 +692,28 @@ public enum DEFIRConverter {
                 reason: "DEF special route requires at least two placement points."
             )
         }
+        guard let first = segment.points.first, first.x != nil, first.y != nil, first.viaName == nil,
+              segment.points.dropLast().allSatisfy({ $0.viaName == nil }),
+              segment.points.allSatisfy({ $0.ext.map { $0 >= 0 } ?? true }) else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: segment.layerName,
+                reason: "Special routes require an explicit first point, nonnegative extensions, and only a terminal via.")
+        }
+        try validateOrthogonalSegments(points, netName: netName, layerName: segment.layerName)
         return points
+    }
+
+    private static func validateOrthogonalSegments(_ points: [IRPoint], netName: String, layerName: String) throws {
+        for index in 1..<points.count {
+            let a = points[index - 1], b = points[index]
+            guard a != b else {
+                throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName,
+                    reason: "Zero-length DEF wire segments are invalid.")
+            }
+            guard a.x == b.x || a.y == b.y else {
+                throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: layerName,
+                    reason: "Non-orthogonal DEF routes require octagonal or explicit STYLE geometry.")
+            }
+        }
     }
 
     private static func validateLayerNumberMapping(

@@ -97,7 +97,7 @@ public enum DEFLibraryWriter {
             lines.append("")
             lines.append("NETS \(doc.nets.count) ;")
             for net in doc.nets {
-                writeNet(net, to: &lines)
+                try writeNet(net, to: &lines)
             }
             lines.append("END NETS")
         }
@@ -106,7 +106,7 @@ public enum DEFLibraryWriter {
             lines.append("")
             lines.append("SPECIALNETS \(doc.specialNets.count) ;")
             for snet in doc.specialNets {
-                writeSpecialNet(snet, to: &lines)
+                try writeSpecialNet(snet, to: &lines)
             }
             lines.append("END SPECIALNETS")
         }
@@ -292,16 +292,26 @@ public enum DEFLibraryWriter {
 
     // MARK: - NETS
 
-    private static func writeNet(_ net: DEFNet, to lines: inout [String]) {
+    private static func writeNet(_ net: DEFNet, to lines: inout [String]) throws {
         var line = "  - \(net.name)"
         for conn in net.connections {
             line += " ( \(conn.componentName) \(conn.pinName) )"
         }
         if let use = net.use { line += " + USE \(use.rawValue)" }
         for wire in net.routing {
-            line += " + \(wire.status.rawValue) \(wire.layerName)"
-            for p in wire.points {
-                line += " ( \(p.x) \(p.y) )"
+            guard !wire.taper && wire.style == nil else {
+                throw DEFError.unsupportedRouteFeature(context: "NET \(net.name)", feature: "TAPER/STYLE")
+            }
+            guard wire.pointExtensions.isEmpty || wire.pointExtensions.count == wire.points.count else {
+                throw DEFError.unsupportedRouteFeature(context: "NET \(net.name)", feature: "misaligned extensions")
+            }
+            line += wire.status == .new_ ? " NEW \(wire.layerName)" : " + \(wire.status.rawValue) \(wire.layerName)"
+            for (index, p) in wire.points.enumerated() {
+                let ext = wire.pointExtensions.isEmpty ? nil : wire.pointExtensions[index]
+                if let ext {
+                    guard ext >= 0 else { throw DEFError.invalidNumber(context: "NET \(net.name) route extension", token: String(ext)) }
+                    line += " ( \(p.x) \(p.y) \(ext) )"
+                } else { line += " ( \(p.x) \(p.y) )" }
             }
             if let via = wire.viaName { line += " \(via)" }
         }
@@ -317,7 +327,7 @@ public enum DEFLibraryWriter {
 
     // MARK: - SPECIALNETS
 
-    private static func writeSpecialNet(_ snet: DEFSpecialNet, to lines: inout [String]) {
+    private static func writeSpecialNet(_ snet: DEFSpecialNet, to lines: inout [String]) throws {
         var line = "  - \(snet.name)"
         for conn in snet.connections {
             line += " ( \(conn.componentName) \(conn.pinName) )"
@@ -326,7 +336,8 @@ public enum DEFLibraryWriter {
         if let src = snet.source { line += " + SOURCE \(src)" }
         if let w = snet.weight { line += " + WEIGHT \(w)" }
         for seg in snet.routing {
-            line += " + \(seg.status.rawValue) \(seg.layerName) \(seg.width)"
+            line += seg.status == .new_
+                ? " NEW \(seg.layerName) \(seg.width)" : " + \(seg.status.rawValue) \(seg.layerName) \(seg.width)"
             if let shape = seg.shape { line += " + SHAPE \(shape.rawValue)" }
             for p in seg.points {
                 if let viaName = p.viaName {
@@ -335,6 +346,7 @@ public enum DEFLibraryWriter {
                     let xStr = p.x.map { String($0) } ?? "*"
                     let yStr = p.y.map { String($0) } ?? "*"
                     if let ext = p.ext {
+                        guard ext >= 0 else { throw DEFError.invalidNumber(context: "SPECIALNET \(snet.name) route extension", token: String(ext)) }
                         line += " ( \(xStr) \(yStr) \(ext) )"
                     } else {
                         line += " ( \(xStr) \(yStr) )"

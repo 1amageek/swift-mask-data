@@ -28,7 +28,9 @@ DEFOrientation -> orthogonal unit IRTransform -> native geometry consumers
 
 ## Contracts and Invariants
 
-Interchange owns exact standard orientation interpretation. Public DEF values do
+Interchange owns exact standard orientation interpretation and routing-point geometry.
+The reader preserves explicit regular/special point extensions and rejects unsupported
+route profiles before returning a successful document. Public DEF values do
 not imply a LEF master size, cell pin location or qualified process connectivity.
 
 ## Verification and Change Impact

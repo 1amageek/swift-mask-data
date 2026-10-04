@@ -37,7 +37,30 @@ Inverse conversion admits finite unit magnification and exact quarter turns modu
 360. Fractional/non-quarter rotations, nonfinite angles and non-unit scales throw
 `DEFIRConverterError.unrepresentableTransform`; they are not rounded or defaulted
 into N/FN. `toDEFDocument` propagates this typed failure for geometry transforms.
-Other existing document/metadata conversion behavior is unchanged by this boundary.
+Route conversion uses the NETS and SPECIALNETS routing-point rules in the same
+reference. NETS omitted extensions mean half of the preferred LEF routing width;
+SPECIALNETS omitted extensions mean zero. Explicit extensions are nonnegative DEF
+DBU distances and are not scaled until a consuming geometry boundary. Each adjacent
+coordinate pair is one wire segment, including at a bend. Conversion emits straight
+IR paths so interior-point extensions are preserved without introducing miter area.
+Regular default-width paths retain the existing width placeholder of one DBU; that
+placeholder is not a physical width. The consumer must admit an exact preferred LEF
+WIDTH before evaluating geometry, then apply `halfWidthExtend` symbolically.
+
+| Source segment | IR guarantee | Failure |
+|---|---|---|
+| NETS, both extensions omitted | `halfWidthExtend` | Width qualification belongs to consumer |
+| NETS, both explicit | `customExtension`, exact begin/end DBU | Negative extension rejected |
+| NETS, one omitted and one explicit | No successful geometry | Typed unsupported: physical width required |
+| SPECIALNETS | `flush` for zero/zero, otherwise `customExtension` | Width must be positive/even |
+
+The bounded route profile accepts nonzero orthogonal segments and a terminal via.
+45-degree styles, TAPER/TAPERRULE/STYLE/NONDEFAULTRULE, masks, virtual/rect geometry,
+and an in-path via continuation require additional semantics and fail explicitly.
+The text reader rejects unknown geometric tokens instead of skipping them. First
+wildcard coordinates and zero-length segments fail. Inverse conversion derives the
+endpoint extensions from IR geometry and emits equivalent straight DEF routes;
+route provenance cannot override modified path geometry.
 
 ## Runtime Flows
 
@@ -58,5 +81,8 @@ nonfinite and out-of-range Double angles cannot trap by conversion to Int.
 
 DEF orientation tests compare all eight transformations against the standard table,
 verify inverse rotations including negative/full turns, and verify malformed transform
-failure through both direct conversion and document export. Recheck native process
+failure through both direct conversion and document export. Literal-byte route tests
+check missing/explicit/zero/negative extensions, NEW boundaries, layer names, DBU
+scales, and unsupported profiles. Independent straight-rectangle bounds check the
+wire footprint, and DEF/IR/text roundtrips preserve segment shape. Recheck native process
 geometry consumers when standard orientation or LayoutIR transform semantics change.

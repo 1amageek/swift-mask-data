@@ -488,8 +488,8 @@ public enum DEFLibraryReader {
                             conns.append(DEFConnection(componentName: comp, pinName: pin))
                         }
                         i = skip(")", tokens, i)
-                    } else if tokens[i] == "+" {
-                        i += 1
+                    } else if tokens[i] == "+" || tokens[i].uppercased() == "NEW" {
+                        if tokens[i] == "+" { i += 1 }
                         guard i < tokens.count else { break }
                         let kw = tokens[i].uppercased()
                         if kw == "USE" {
@@ -501,43 +501,11 @@ public enum DEFLibraryReader {
                         } else if kw == "ROUTED" || kw == "FIXED" || kw == "COVER" || kw == "NOSHIELD" || kw == "NEW" {
                             let status = DEFRouteWire.RouteStatus(rawValue: kw) ?? .routed
                             i += 1
-                            if i < tokens.count {
-                                let layerName = tokens[i]; i += 1
-                                var points: [IRPoint] = []
-                                var viaName: String?
-                                while i < tokens.count && tokens[i] == "(" {
-                                    i += 1
-                                    if i + 1 < tokens.count, tokens[i] != "*" {
-                                        let px = try parseInt32(tokens, at: i, context: "NET \(name) route x")
-                                        let py: Int32
-                                        if tokens[i + 1] == "*" {
-                                            py = try previousRoutePoint(points, axis: "y", context: "NET \(name) route wildcard")
-                                        } else {
-                                            py = try parseInt32(tokens, at: i + 1, context: "NET \(name) route y")
-                                        }
-                                        points.append(IRPoint(x: px, y: py))
-                                        i += 2
-                                    } else if i < tokens.count && tokens[i] == "*" {
-                                        // wildcard
-                                        i += 1
-                                        if i < tokens.count {
-                                            let py = try parseInt32(tokens, at: i, context: "NET \(name) route y")
-                                            let prevX = try previousRoutePoint(points, axis: "x", context: "NET \(name) route wildcard")
-                                            points.append(IRPoint(x: prevX, y: py))
-                                            i += 1
-                                        }
-                                    }
-                                    i = skip(")", tokens, i)
-                                }
-                                // Check for via name after points
-                                if i < tokens.count && tokens[i] != "+" && tokens[i] != ";" && tokens[i] != "(" {
-                                    if Int32(tokens[i]) == nil {
-                                        viaName = tokens[i]; i += 1
-                                    }
-                                }
-                                routing.append(DEFRouteWire(status: status, layerName: layerName,
-                                                           points: points, viaName: viaName))
-                            }
+                            let (wire, next) = try parseRegularWire(tokens, from: i, status: status, netName: name)
+                            routing.append(wire)
+                            i = next
+                        } else if ["NONDEFAULTRULE", "TAPER", "TAPERRULE", "STYLE", "MASK", "RECT", "VIRTUAL"].contains(kw) {
+                            throw DEFError.unsupportedRouteFeature(context: "NET \(name)", feature: kw)
                         } else if kw == "PROPERTY" {
                             i += 1
                             let (p, next) = parseProperties(tokens, from: i)
@@ -558,6 +526,57 @@ public enum DEFLibraryReader {
         }
 
         return (nets, i)
+    }
+
+    private static func parseRegularWire(
+        _ tokens: [String], from start: Int, status: DEFRouteWire.RouteStatus, netName: String
+    ) throws -> (DEFRouteWire, Int) {
+        var i = start
+        guard i < tokens.count else { throw DEFError.missingNumber(context: "NET \(netName) route layer") }
+        let layerName = tokens[i]
+        i += 1
+        var points: [IRPoint] = []
+        var extensions: [Int32?] = []
+        while i < tokens.count && tokens[i] == "(" {
+            i += 1
+            let x = i < tokens.count && tokens[i] == "*"
+                ? try previousRoutePoint(points, axis: "x", context: "NET \(netName) route wildcard")
+                : try parseInt32(tokens, at: i, context: "NET \(netName) route x")
+            i += 1
+            let y = i < tokens.count && tokens[i] == "*"
+                ? try previousRoutePoint(points, axis: "y", context: "NET \(netName) route wildcard")
+                : try parseInt32(tokens, at: i, context: "NET \(netName) route y")
+            i += 1
+            var ext: Int32?
+            if i < tokens.count && tokens[i] != ")" {
+                ext = try parseInt32(tokens, at: i, context: "NET \(netName) route extension")
+                guard let value = ext, value >= 0 else {
+                    throw DEFError.invalidNumber(context: "NET \(netName) route extension", token: tokens[i])
+                }
+                i += 1
+            }
+            guard i < tokens.count && tokens[i] == ")" else {
+                throw DEFError.unsupportedRouteFeature(context: "NET \(netName)", feature: "malformed routing point")
+            }
+            i += 1
+            points.append(IRPoint(x: x, y: y))
+            extensions.append(ext)
+        }
+        var viaName: String?
+        if i < tokens.count, !["+", ";", "NEW"].contains(tokens[i].uppercased()) {
+            let feature = tokens[i].uppercased()
+            guard !["MASK", "RECT", "VIRTUAL", "TAPER", "TAPERRULE", "STYLE", "NONDEFAULTRULE"].contains(feature),
+                  Int32(tokens[i]) == nil else {
+                throw DEFError.unsupportedRouteFeature(context: "NET \(netName)", feature: tokens[i])
+            }
+            viaName = tokens[i]
+            i += 1
+        }
+        guard i >= tokens.count || ["+", ";", "NEW"].contains(tokens[i].uppercased()) else {
+            throw DEFError.unsupportedRouteFeature(context: "NET \(netName)", feature: tokens[i])
+        }
+        return (DEFRouteWire(status: status, layerName: layerName, points: points, viaName: viaName,
+                             pointExtensions: extensions), i)
     }
 
     // MARK: - SPECIALNETS
@@ -590,8 +609,8 @@ public enum DEFLibraryReader {
                 }
 
                 while i < tokens.count && tokens[i] != ";" {
-                    if tokens[i] == "+" {
-                        i += 1
+                    if tokens[i] == "+" || tokens[i].uppercased() == "NEW" {
+                        if tokens[i] == "+" { i += 1 }
                         guard i < tokens.count else { break }
                         let kw = tokens[i].uppercased()
                         if kw == "USE" {
@@ -650,21 +669,35 @@ public enum DEFLibraryReader {
                                     // Optional extension
                                     if i < tokens.count && tokens[i] != ")" {
                                         pt.ext = try parseInt32(tokens, at: i, context: "SPECIALNET \(name) route extension")
+                                        if let ext = pt.ext, ext < 0 {
+                                            throw DEFError.invalidNumber(context: "SPECIALNET \(name) route extension", token: String(ext))
+                                        }
                                         i += 1
                                     }
-                                    i = skip(")", tokens, i)
+                                    guard i < tokens.count, tokens[i] == ")" else {
+                                        throw DEFError.unsupportedRouteFeature(context: "SPECIALNET \(name)", feature: "malformed routing point")
+                                    }
+                                    i += 1
                                     points.append(pt)
                                 }
                                 // Check for via name after points
                                 if i < tokens.count && tokens[i] != "+" && tokens[i] != ";" && tokens[i] != "(" {
-                                    if Int32(tokens[i]) == nil && tokens[i] != "NEW" {
+                                    if ["MASK", "RECT", "VIRTUAL", "TAPER", "TAPERRULE", "STYLE"].contains(tokens[i].uppercased()) || Int32(tokens[i]) != nil {
+                                        throw DEFError.unsupportedRouteFeature(context: "SPECIALNET \(name)", feature: tokens[i])
+                                    }
+                                    if tokens[i].uppercased() != "NEW" {
                                         let via = tokens[i]; i += 1
                                         points.append(DEFRoutePoint(viaName: via))
                                     }
                                 }
+                                if i < tokens.count, !["+", ";", "NEW"].contains(tokens[i].uppercased()) {
+                                    throw DEFError.unsupportedRouteFeature(context: "SPECIALNET \(name)", feature: tokens[i])
+                                }
                                 snet.routing.append(DEFRouteSegment(status: status, layerName: layerName,
                                                                     width: width, points: points, shape: shape))
                             }
+                        } else if ["WIDTH", "NONDEFAULTRULE", "TAPER", "TAPERRULE", "STYLE", "MASK"].contains(kw) {
+                            throw DEFError.unsupportedRouteFeature(context: "SPECIALNET \(name)", feature: kw)
                         } else if kw == "SOURCE" {
                             i += 1
                             if i < tokens.count { snet.source = tokens[i]; i += 1 }
