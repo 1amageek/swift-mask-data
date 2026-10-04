@@ -12,8 +12,8 @@ public enum OASISRecordType: UInt8, Sendable {
     case propstringRef = 10
     case layername     = 11
     case layernameText = 12
-    case cell          = 13
-    case cellRef       = 14
+    case cell          = 14
+    case cellRef       = 13
     case xyAbsolute    = 15
     case xyRelative    = 16
     case placement     = 17

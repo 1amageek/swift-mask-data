@@ -23,8 +23,8 @@ struct OASISRecordTypeTests {
     }
 
     @Test func geometryRecordIDs() {
-        #expect(OASISRecordType.cell.rawValue == 13)
-        #expect(OASISRecordType.cellRef.rawValue == 14)
+        #expect(OASISRecordType.cell.rawValue == 14)
+        #expect(OASISRecordType.cellRef.rawValue == 13)
         #expect(OASISRecordType.xyAbsolute.rawValue == 15)
         #expect(OASISRecordType.xyRelative.rawValue == 16)
         #expect(OASISRecordType.placement.rawValue == 17)
@@ -91,39 +91,39 @@ struct LEB128UnsignedTests {
     }
 }
 
-@Suite("LEB128 Signed (Zigzag)")
+@Suite("OASIS Signed (Sign and Magnitude)")
 struct LEB128SignedTests {
     @Test func readZero() throws {
-        // zigzag(0) = 0
+        // sign-magnitude(0) = 0
         var reader = OASISReader(data: Data([0x00]))
         let value = try reader.readSignedInteger()
         #expect(value == 0)
     }
 
     @Test func readPositiveOne() throws {
-        // zigzag(1) = 2 → 0x02
+        // sign-magnitude(1) = 2 → 0x02
         var reader = OASISReader(data: Data([0x02]))
         let value = try reader.readSignedInteger()
         #expect(value == 1)
     }
 
     @Test func readNegativeOne() throws {
-        // zigzag(-1) = 1 → 0x01
-        var reader = OASISReader(data: Data([0x01]))
+        // sign-magnitude(-1) = 3 → 0x03
+        var reader = OASISReader(data: Data([0x03]))
         let value = try reader.readSignedInteger()
         #expect(value == -1)
     }
 
     @Test func readPositiveTwo() throws {
-        // zigzag(2) = 4 → 0x04
+        // sign-magnitude(2) = 4 → 0x04
         var reader = OASISReader(data: Data([0x04]))
         let value = try reader.readSignedInteger()
         #expect(value == 2)
     }
 
     @Test func readNegativeTwo() throws {
-        // zigzag(-2) = 3 → 0x03
-        var reader = OASISReader(data: Data([0x03]))
+        // sign-magnitude(-2) = 5 → 0x05
+        var reader = OASISReader(data: Data([0x05]))
         let value = try reader.readSignedInteger()
         #expect(value == -2)
     }

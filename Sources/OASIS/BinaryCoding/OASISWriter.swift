@@ -35,17 +35,21 @@ public struct OASISWriter: Sendable {
         }
     }
 
-    // MARK: - Signed Integer (Zigzag)
+    // MARK: - Signed Integer (Sign and Magnitude)
 
     public mutating func writeSignedInteger(_ value: Int64) {
-        // Zigzag encode: (n << 1) ^ (n >> 63)
-        let encoded: UInt64
-        if value >= 0 {
-            encoded = UInt64(value) << 1
-        } else {
-            encoded = (UInt64(bitPattern: -(value + 1)) << 1) | 1
+        // Encode the sign separately so Int64.min needs no overflowing 65-bit temporary.
+        var magnitude = value.magnitude
+        var first = UInt8((magnitude & 0x3F) << 1) | (value < 0 ? 1 : 0)
+        magnitude >>= 6
+        if magnitude != 0 { first |= 0x80 }
+        writeByte(first)
+        while magnitude != 0 {
+            var byte = UInt8(magnitude & 0x7F)
+            magnitude >>= 7
+            if magnitude != 0 { byte |= 0x80 }
+            writeByte(byte)
         }
-        writeUnsignedInteger(encoded)
     }
 
     // MARK: - Real Number
@@ -138,12 +142,11 @@ public struct OASISWriter: Sendable {
             return
         }
 
-        // Fallback: type 4 (general delta pairs)
+        // Type 4 uses standard g-deltas.
         writeUnsignedInteger(4)
         writeUnsignedInteger(UInt64(points.count))
         for point in points {
-            writeSignedInteger(Int64(point.x))
-            writeSignedInteger(Int64(point.y))
+            writeGDelta(OASISDisplacement(dx: Int64(point.x), dy: Int64(point.y)))
         }
     }
 
@@ -210,7 +213,7 @@ public struct OASISWriter: Sendable {
     private func isOctangular(_ points: [IRPoint]) -> Bool {
         for p in points {
             if p.x == 0 || p.y == 0 { continue }
-            if abs(p.x) == abs(p.y) { continue }
+            if Int64(p.x).magnitude == Int64(p.y).magnitude { continue }
             return false
         }
         return !points.isEmpty
@@ -228,8 +231,8 @@ public struct OASISWriter: Sendable {
             else if p.x == 0 && p.y < 0 { dir = 3; mag = UInt64(-Int64(p.y)) }
             else if p.x > 0 && p.y > 0 { dir = 4; mag = UInt64(p.x) }
             else if p.x < 0 && p.y > 0 { dir = 5; mag = UInt64(p.y) }
-            else if p.x > 0 && p.y < 0 { dir = 6; mag = UInt64(p.x) }
-            else { dir = 7; mag = UInt64(-Int64(p.x)) }
+            else if p.x < 0 && p.y < 0 { dir = 6; mag = UInt64(-Int64(p.x)) }
+            else { dir = 7; mag = UInt64(p.x) }
             writeUnsignedInteger((mag << 3) | dir)
         }
     }
@@ -375,19 +378,18 @@ public struct OASISWriter: Sendable {
     public mutating func writePropertyValue(_ value: OASISPropertyValue) throws {
         switch value {
         case .real(let v):
-            writeUnsignedInteger(0)
             writeReal(v)
         case .unsignedInteger(let v):
-            writeUnsignedInteger(1)
+            writeUnsignedInteger(8)
             writeUnsignedInteger(v)
         case .signedInteger(let v):
-            writeUnsignedInteger(2)
+            writeUnsignedInteger(9)
             writeSignedInteger(v)
         case .aString(let s):
-            writeUnsignedInteger(3)
+            writeUnsignedInteger(10)
             try writeAString(s)
         case .bString(let bytes):
-            writeUnsignedInteger(4)
+            writeUnsignedInteger(11)
             writeBString(Data(bytes))
         case .reference(let ref):
             writeUnsignedInteger(14)

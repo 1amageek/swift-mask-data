@@ -99,8 +99,9 @@ struct OASISBugFixTests {
     // START
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)  // 1000 dbu/um
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
 
     // CELLNAME
     w.writeByte(OASISRecordType.cellname.rawValue)
@@ -140,9 +141,7 @@ struct OASISBugFixTests {
     w.writeByte(0x00)
 
     // END
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
     let result = try OASISLibraryReader.read(w.data)
     #expect(result.cells.count == 1)
@@ -219,8 +218,9 @@ struct OASISBugFixTests {
 
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
 
     w.writeByte(OASISRecordType.cellname.rawValue)
     try w.writeAString("BADREP")
@@ -238,9 +238,7 @@ struct OASISBugFixTests {
     w.writeSignedInteger(0)
     w.writeByte(0x00)
 
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
     #expect(throws: OASISError.self) {
       _ = try OASISLibraryReader.read(w.data)
@@ -277,10 +275,10 @@ struct OASISBugFixTests {
       w.writeUnsignedInteger(0)
       w.writeUnsignedInteger(4)
       w.writeUnsignedInteger(1)
-      w.writeSignedInteger(Int64(Int32.max) + 1)
-      w.writeSignedInteger(0)
-      w.writeSignedInteger(0)
-      w.writeSignedInteger(0)
+      w.writeUnsignedInteger(((UInt64(Int32.max) + 1) << 2) | 1) // general g-delta x
+      w.writeUnsignedInteger(0) // general g-delta y
+      w.writeSignedInteger(0) // origin x
+      w.writeSignedInteger(0) // origin y
     }
 
     expectNumericOverflow(contextContains: "general point-list dx") {
@@ -293,8 +291,9 @@ struct OASISBugFixTests {
     w.writeMagic()
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
     w.writeByte(OASISRecordType.cellnameRef.rawValue)
     w.writeUnsignedInteger(1_000_001)
     try w.writeAString("TOO_LARGE")
@@ -352,8 +351,9 @@ struct OASISBugFixTests {
 
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
 
     w.writeByte(OASISRecordType.cellname.rawValue)
     try w.writeAString("UNIT")
@@ -389,9 +389,7 @@ struct OASISBugFixTests {
     w.writeUnsignedInteger(1)  // count - 2 = 1 -> 3 copies
     w.writeUnsignedInteger(100)  // spacing
 
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
     let result = try OASISLibraryReader.read(w.data)
     let top = try #require(result.cell(named: "PTOP"))
@@ -563,8 +561,9 @@ struct OASISBugFixTests {
     // START
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
 
     // CELLNAME
     w.writeByte(OASISRecordType.cellname.rawValue)
@@ -600,9 +599,7 @@ struct OASISBugFixTests {
     try w.writePropertyValue(.aString("gamma"))
 
     // END
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
     let result = try OASISLibraryReader.read(w.data)
     #expect(result.cells.count == 1)
@@ -626,13 +623,12 @@ struct OASISBugFixTests {
     w.writeMagic()
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
     w.writeByte(OASISRecordType.cellRef.rawValue)
     w.writeUnsignedInteger(9)
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
     do {
       _ = try OASISLibraryReader.read(w.data)
@@ -675,16 +671,15 @@ struct OASISBugFixTests {
     w.writeMagic()
     w.writeByte(OASISRecordType.start.rawValue)
     try w.writeAString("1.0")
-    w.writeReal(0.001)
+    w.writeReal(1000)
     w.writeUnsignedInteger(0)
+    for _ in 0..<12 { w.writeUnsignedInteger(0) }
     w.writeByte(OASISRecordType.cellname.rawValue)
     try w.writeAString(cellName)
     w.writeByte(OASISRecordType.cellRef.rawValue)
     w.writeUnsignedInteger(0)
     try body(&w)
-    w.writeByte(OASISRecordType.end.rawValue)
-    try w.writeAString("")
-    w.writeUnsignedInteger(0)
+    w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
     return w.data
   }
 

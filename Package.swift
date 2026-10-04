@@ -44,7 +44,8 @@ let package = Package(
             dependencies: [
                 "LayoutIR",
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
-            ]
+            ],
+            exclude: ["DESIGN.md", "BinaryCoding/DESIGN.md", "LibraryCodec/DESIGN.md"]
         ),
         .target(name: "FormatDetector", dependencies: ["LayoutIR"]),
         .target(

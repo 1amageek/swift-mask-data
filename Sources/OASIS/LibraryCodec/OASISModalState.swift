@@ -1,3 +1,5 @@
+import LayoutIR
+
 /// Tracks modal variables within an OASIS cell.
 ///
 /// OASIS uses modal variables to avoid repeating unchanged values
@@ -9,6 +11,14 @@ public struct OASISModalState: Sendable {
     public var texttype: UInt64?
     public var x: Int64?
     public var y: Int64?
+    public var textX: Int64?
+    public var textY: Int64?
+    public var placementX: Int64?
+    public var placementY: Int64?
+    public var relativeCoordinates = false
+    var pathBegin: OASISPathEndpoint?
+    var pathEnd: OASISPathEndpoint?
+    var pathDeltas: [IRPoint]?
     public var geometryW: UInt64?
     public var geometryH: UInt64?
     public var pathHalfwidth: UInt64?
@@ -23,21 +33,6 @@ public struct OASISModalState: Sendable {
     public init() {}
 
     public mutating func reset() {
-        layer = nil
-        datatype = nil
-        textlayer = nil
-        texttype = nil
-        x = nil
-        y = nil
-        geometryW = nil
-        geometryH = nil
-        pathHalfwidth = nil
-        cellName = nil
-        textString = nil
-        ctrapType = nil
-        circleRadius = nil
-        lastRepetition = nil
-        lastPropertyName = nil
-        lastPropertyValues = nil
+        self = OASISModalState()
     }
 }

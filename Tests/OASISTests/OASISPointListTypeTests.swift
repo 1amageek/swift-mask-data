@@ -131,8 +131,8 @@ struct OASISPointListTypeTests {
             (mag << 3) | 3, // south
             (mag << 3) | 4, // NE
             (mag << 3) | 5, // NW
-            (mag << 3) | 6, // SE
-            (mag << 3) | 7, // SW
+            (mag << 3) | 6, // SW
+            (mag << 3) | 7, // SE
         ]
         let data = buildPointListDataUnsigned(typeCode: 3, unsignedDeltas: encoded)
         var reader = OASISReader(data: data)
@@ -144,8 +144,8 @@ struct OASISPointListTypeTests {
             IRPoint(x: 0, y: -10),    // S
             IRPoint(x: 10, y: 10),    // NE
             IRPoint(x: -10, y: 10),   // NW
-            IRPoint(x: 10, y: -10),   // SE
             IRPoint(x: -10, y: -10),  // SW
+            IRPoint(x: 10, y: -10),   // SE
         ])
     }
 
@@ -153,7 +153,7 @@ struct OASISPointListTypeTests {
         let mag: UInt64 = 5000
         let encoded: [UInt64] = [
             (mag << 3) | 4, // NE
-            (mag << 3) | 7, // SW
+            (mag << 3) | 6, // SW
         ]
         let data = buildPointListDataUnsigned(typeCode: 3, unsignedDeltas: encoded)
         var reader = OASISReader(data: data)

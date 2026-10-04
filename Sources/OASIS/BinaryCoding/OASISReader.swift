@@ -129,20 +129,29 @@ public struct OASISReader: Sendable {
         }
     }
 
-    // MARK: - Signed Integer (Zigzag)
+    // MARK: - Signed Integer (Sign and Magnitude)
 
     public mutating func readSignedInteger() throws -> Int64 {
-        let unsigned = try readUnsignedInteger()
-        let sign = unsigned & 1
-        let magnitude = unsigned >> 1
+        let first = try readByte()
+        let negative = first & 1 != 0
+        var magnitude = UInt64((first & 0x7F) >> 1)
+        var continued = first & 0x80 != 0
+        var shift: UInt64 = 6
+        while continued {
+            let byte = try readByte()
+            let payload = UInt64(byte & 0x7F)
+            guard shift <= 62, !(shift == 62 && payload > 3) else {
+                throw OASISError.numericOverflow(context: "signed integer", value: "magnitude at byte offset \(offset - 1)")
+            }
+            magnitude |= payload << shift
+            continued = byte & 0x80 != 0
+            shift += 7
+        }
+        if negative, magnitude == UInt64(Int64.max) + 1 { return Int64.min }
         guard magnitude <= UInt64(Int64.max) else {
             throw OASISError.numericOverflow(context: "signed integer", value: String(magnitude))
         }
-        if sign == 0 {
-            return Int64(magnitude)
-        } else {
-            return -(Int64(magnitude)) - 1
-        }
+        return negative ? -Int64(magnitude) : Int64(magnitude)
     }
 
     // MARK: - Real Number
@@ -150,6 +159,10 @@ public struct OASISReader: Sendable {
     public mutating func readReal() throws -> Double {
         let startOffset = offset
         let typeCode = try readUnsignedInteger()
+        return try readRealPayload(typeCode: typeCode, startOffset: startOffset)
+    }
+
+    private mutating func readRealPayload(typeCode: UInt64, startOffset: Int) throws -> Double {
         switch typeCode {
         case 0:
             let n = try readUnsignedInteger()
@@ -266,11 +279,10 @@ public struct OASISReader: Sendable {
         var points: [IRPoint] = []
         points.reserveCapacity(count)
         for _ in 0..<count {
-            let dx = try readSignedInteger()
-            let dy = try readSignedInteger()
+            let delta = try readGDelta()
             points.append(IRPoint(
-                x: try checkedInt32(dx, context: "general point-list dx"),
-                y: try checkedInt32(dy, context: "general point-list dy")
+                x: try checkedInt32(delta.dx, context: "general point-list dx"),
+                y: try checkedInt32(delta.dy, context: "general point-list dy")
             ))
         }
         return points
@@ -327,22 +339,24 @@ public struct OASISReader: Sendable {
         points.reserveCapacity(count)
         for _ in 0..<count {
             let encoded = try readUnsignedInteger()
-            let dir = encoded & 0x07
-            let mag = try checkedInt32(
-                try checkedInt64(encoded >> 3, context: "octangular point-list magnitude"),
-                context: "octangular point-list magnitude"
-            )
-            switch dir {
-            case 0: points.append(IRPoint(x: mag, y: 0))
-            case 1: points.append(IRPoint(x: 0, y: mag))
-            case 2: points.append(IRPoint(x: -mag, y: 0))
-            case 3: points.append(IRPoint(x: 0, y: -mag))
-            case 4: points.append(IRPoint(x: mag, y: mag))
-            case 5: points.append(IRPoint(x: -mag, y: mag))
-            case 6: points.append(IRPoint(x: mag, y: -mag))
-            case 7: points.append(IRPoint(x: -mag, y: -mag))
-            default: break
+            let magnitude = try checkedInt64(encoded >> 3, context: "octangular point-list magnitude")
+            let direction = encoded & 7
+            let dx: Int64
+            let dy: Int64
+            switch direction {
+            case 0: (dx, dy) = (magnitude, 0)
+            case 1: (dx, dy) = (0, magnitude)
+            case 2: (dx, dy) = (-magnitude, 0)
+            case 3: (dx, dy) = (0, -magnitude)
+            case 4: (dx, dy) = (magnitude, magnitude)
+            case 5: (dx, dy) = (-magnitude, magnitude)
+            case 6: (dx, dy) = (-magnitude, -magnitude)
+            default: (dx, dy) = (magnitude, -magnitude)
             }
+            points.append(IRPoint(
+                x: try checkedInt32(dx, context: "octangular point-list dx"),
+                y: try checkedInt32(dy, context: "octangular point-list dy")
+            ))
         }
         return points
     }
@@ -555,31 +569,23 @@ public struct OASISReader: Sendable {
     // MARK: - Property Value
 
     public mutating func readPropertyValue() throws -> OASISPropertyValue {
+        let startOffset = offset
         let typeCode = try readUnsignedInteger()
         switch typeCode {
-        case 0: return .real(try readReal())
-        case 1: return .unsignedInteger(try readUnsignedInteger())
-        case 2: return .signedInteger(try readSignedInteger())
-        case 3: return .aString(try readAString())
-        case 4:
-            let bdata = try readBString()
-            return .bString(Array(bdata))
-        case 5: return .aString(try readAString())
-        case 6: return .aString(try readAString())
-        case 7:
-            let bdata = try readBString()
-            return .bString(Array(bdata))
-        case 8: return .real(try readReal())
-        case 9: return .unsignedInteger(try readUnsignedInteger())
-        case 10: return .signedInteger(try readSignedInteger())
-        case 11: return .aString(try readAString())
-        case 12:
-            let bdata = try readBString()
-            return .bString(Array(bdata))
-        case 13: return .aString(try readAString())
+        case 0...7: return .real(try readRealPayload(typeCode: typeCode, startOffset: startOffset))
+        case 8: return .unsignedInteger(try readUnsignedInteger())
+        case 9: return .signedInteger(try readSignedInteger())
+        case 10: return .aString(try readAString())
+        case 11: return .bString(Array(try readBString()))
+        case 12: return .aString(try readAString())
         case 14: return .reference(try readUnsignedInteger())
-        case 15: return .reference(try readUnsignedInteger())
-        default: return .unsignedInteger(typeCode)
+        // FIXME(INCOMPLETE_IMPLEMENTATION): A/N reference kinds have no owned value representation.
+        // Library property decoding reaches this branch; preserve reference kind and resolve its table
+        // before these records can be imported successfully.
+        case 13, 15:
+            throw OASISError.unsupportedGeometry(context: "property reference", reason: "A/N string references are not represented by this codec.")
+        default:
+            throw OASISError.invalidPropertyValueType(offset: startOffset, typeCode: typeCode)
         }
     }
 }

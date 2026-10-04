@@ -1,4 +1,7 @@
 public enum OASISError: Error, Sendable {
+    case invalidEnvelope(offset: Int, reason: String)
+    case invalidExtensionScheme(offset: Int, value: UInt64)
+    case undefinedModal(context: String)
     case invalidMagic(offset: Int)
     case unexpectedEndOfData(offset: Int)
     case unknownRecordType(offset: Int, rawValue: UInt8)
@@ -7,6 +10,7 @@ public enum OASISError: Error, Sendable {
     case invalidUnits(offset: Int, reason: String)
     case invalidString(offset: Int)
     case unexpectedRecord(got: UInt8, expected: String, offset: Int)
+    case invalidPropertyValueType(offset: Int, typeCode: UInt64)
     case invalidPointListType(offset: Int, typeCode: UInt64)
     case invalidRepetitionType(offset: Int, typeCode: UInt64)
     case decompressFailure(offset: Int)

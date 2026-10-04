@@ -17,18 +17,23 @@ public enum OASISLibraryReader {
             throw OASISError.unexpectedRecord(got: startByte, expected: "START", offset: reader.currentOffset - 1)
         }
         let version = try reader.readAString()
-        _ = version // "1.0"
+        guard version == "1.0" else {
+            throw OASISError.invalidEnvelope(offset: reader.currentOffset, reason: "Unsupported OASIS version.")
+        }
         let unitOffset = reader.currentOffset
         let unitReal = try reader.readReal()
         let scale: DatabaseUnitScale
         do {
-            scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: 1.0 / unitReal)
+            scale = try DatabaseUnitScale(databaseUnitsPerMicrometer: unitReal)
         } catch let error as DatabaseUnitScaleError {
             throw OASISError.invalidUnits(offset: unitOffset, reason: error.localizedDescription)
         }
         let offsetFlag = try reader.readUnsignedInteger()
-        if offsetFlag != 0 {
-            // Offset tables present: 6 tables x 2 values (type + offset) = 12 values
+        guard offsetFlag <= 1 else {
+            throw OASISError.invalidEnvelope(offset: reader.currentOffset, reason: "Invalid offset-table flag.")
+        }
+        if offsetFlag == 0 {
+            // Six table strictness/offset pairs are present in START.
             for _ in 0..<12 {
                 _ = try reader.readUnsignedInteger()
             }
@@ -53,10 +58,17 @@ public enum OASISLibraryReader {
             case .pad:
                 continue
             case .end:
-                // END record: read padding string and validation
-                _ = try reader.readAString() // padding
-                if reader.hasMore {
-                    _ = try reader.readUnsignedInteger() // validation-scheme
+                let endOffset = reader.currentOffset - 1
+                if offsetFlag == 1 {
+                    for _ in 0..<12 { _ = try reader.readUnsignedInteger() }
+                }
+                _ = try reader.readBString()
+                let validation = try reader.readUnsignedInteger()
+                guard validation == 0 else {
+                    throw OASISError.invalidEnvelope(offset: endOffset, reason: "Unsupported validation scheme; signature was not verified.")
+                }
+                guard reader.currentOffset - endOffset == 256, !reader.hasMore else {
+                    throw OASISError.invalidEnvelope(offset: endOffset, reason: "END must be the final 256-byte record.")
                 }
                 let name = libraryName.isEmpty ? (cellNames.first ?? "OASIS") : libraryName
                 return IRLibrary(name: name, databaseUnitScale: scale, cells: cells)
@@ -119,8 +131,7 @@ public enum OASISLibraryReader {
             }
         }
 
-        let name = libraryName.isEmpty ? "OASIS" : libraryName
-        return IRLibrary(name: name, databaseUnitScale: scale, cells: cells)
+        throw OASISError.invalidEnvelope(offset: reader.currentOffset, reason: "Missing END record.")
     }
 
     // MARK: - Cell Contents
@@ -146,8 +157,10 @@ public enum OASISLibraryReader {
                 return IRCell(name: name, elements: elements)
             case .xyAbsolute:
                 _ = try reader.readByte()
+                modal.relativeCoordinates = false
             case .xyRelative:
                 _ = try reader.readByte()
+                modal.relativeCoordinates = true
             case .rectangle:
                 _ = try reader.readByte()
                 try appendElements(
@@ -245,7 +258,7 @@ public enum OASISLibraryReader {
                 }
             case .propertyRepeat:
                 _ = try reader.readByte()
-                applyPropertyRepeat(modal: &modal, elements: &elements)
+                try applyPropertyRepeat(modal: &modal, elements: &elements)
             case .cblock:
                 _ = try reader.readByte()
                 try reader.handleCBlock()
@@ -293,8 +306,8 @@ public enum OASISLibraryReader {
         if infoByte & 0x80 != 0 {
             modal.geometryH = modal.geometryW
         }
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
@@ -461,8 +474,8 @@ public enum OASISLibraryReader {
             deltas = try reader.readPointList()
         }
 
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
@@ -492,26 +505,38 @@ public enum OASISLibraryReader {
         if infoByte & 0x02 != 0 { modal.datatype = try reader.readUnsignedInteger() }
         if infoByte & 0x40 != 0 { modal.pathHalfwidth = try reader.readUnsignedInteger() }
 
-        var pathType: IRPathType = .flush
+        guard let rawHalfwidth = modal.pathHalfwidth else { throw OASISError.undefinedModal(context: "path half-width") }
+        let halfwidth = try checkedInt64(rawHalfwidth, context: "path half-width")
         if infoByte & 0x80 != 0 {
-            let extScheme = try reader.readUnsignedInteger()
-            pathType = irPathType(from: extScheme)
+            let schemeOffset = reader.currentOffset
+            let scheme = try reader.readUnsignedInteger()
+            guard scheme <= 15 else { throw OASISError.invalidExtensionScheme(offset: schemeOffset, value: scheme) }
+            modal.pathBegin = try readEndpoint(&reader, code: scheme >> 2, previous: modal.pathBegin, halfwidth: halfwidth)
+            modal.pathEnd = try readEndpoint(&reader, code: scheme & 3, previous: modal.pathEnd, halfwidth: halfwidth)
         }
-
-        var deltas: [IRPoint] = []
-        if infoByte & 0x20 != 0 {
-            deltas = try reader.readPointList()
+        guard let begin = modal.pathBegin, let end = modal.pathEnd else {
+            throw OASISError.undefinedModal(context: "path endpoint extensions")
         }
+        if infoByte & 0x20 != 0 { modal.pathDeltas = try reader.readPointList() }
+        guard let deltas = modal.pathDeltas else { throw OASISError.undefinedModal(context: "path point list") }
+        guard !deltas.isEmpty else { throw OASISError.unsupportedGeometry(context: "path", reason: "PATH needs at least one delta.") }
 
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
-        let layer = try checkedInt16(modal.layer ?? 0, context: "path layer")
-        let datatype = try checkedInt16(modal.datatype ?? 0, context: "path datatype")
-        let halfwidth = try checkedInt32(modal.pathHalfwidth ?? 0, context: "path halfwidth")
-        let width = try checkedInt32(checkedMultiply(Int64(halfwidth), 2, context: "path width"), context: "path width")
+        guard let rawLayer = modal.layer, let rawDatatype = modal.datatype else { throw OASISError.undefinedModal(context: "path layer/datatype") }
+        let layer = try checkedInt16(rawLayer, context: "path layer")
+        let datatype = try checkedInt16(rawDatatype, context: "path datatype")
+        let width = try checkedInt32(checkedMultiply(halfwidth, 2, context: "path width"), context: "path width")
+        guard width > 0 else { throw OASISError.unsupportedGeometry(context: "path", reason: "PATH width must be positive.") }
+        let beginValue = try checkedInt32(begin.value, context: "path begin extension")
+        let endValue = try checkedInt32(end.value, context: "path end extension")
+        let pathType: IRPathType
+        if !begin.isExplicit, !end.isExplicit, beginValue == 0, endValue == 0 { pathType = .flush }
+        else if !begin.isExplicit, !end.isExplicit, begin.value == halfwidth, end.value == halfwidth { pathType = .halfWidthExtend }
+        else { pathType = .customExtension }
         let originX = try checkedInt32(modal.x ?? 0, context: "path x")
         let originY = try checkedInt32(modal.y ?? 0, context: "path y")
 
@@ -524,7 +549,9 @@ public enum OASISLibraryReader {
             points.append(try checkedPoint(x: cx, y: cy, context: "path point"))
         }
 
-        return try expand(.path(IRPath(layer: layer, datatype: datatype, pathType: pathType, width: width, points: points, properties: [])), repetition: repetition)
+        return try expand(.path(IRPath(layer: layer, datatype: datatype, pathType: pathType, width: width, points: points, properties: [],
+            beginExtension: pathType == .customExtension ? beginValue : nil,
+            endExtension: pathType == .customExtension ? endValue : nil)), repetition: repetition)
     }
 
     // MARK: - TEXT
@@ -548,15 +575,15 @@ public enum OASISLibraryReader {
 
         if infoByte & 0x01 != 0 { modal.textlayer = try reader.readUnsignedInteger() }
         if infoByte & 0x02 != 0 { modal.texttype = try reader.readUnsignedInteger() }
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.textX = try readCoordinate(&reader, previous: modal.textX, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.textY = try readCoordinate(&reader, previous: modal.textY, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
         let layer = try checkedInt16(modal.textlayer ?? 0, context: "text layer")
         let texttype = try checkedInt16(modal.texttype ?? 0, context: "text type")
-        let x = try checkedInt32(modal.x ?? 0, context: "text x")
-        let y = try checkedInt32(modal.y ?? 0, context: "text y")
+        let x = try checkedInt32(modal.textX ?? 0, context: "text x")
+        let y = try checkedInt32(modal.textY ?? 0, context: "text y")
 
         return try expand(.text(IRText(
             layer: layer,
@@ -606,11 +633,11 @@ public enum OASISLibraryReader {
         }
 
         if withTransform {
-            if infoByte & 0x20 != 0 { modal.x = try reader.readSignedInteger() }
-            if infoByte & 0x10 != 0 { modal.y = try reader.readSignedInteger() }
+            if infoByte & 0x20 != 0 { modal.placementX = try readCoordinate(&reader, previous: modal.placementX, relative: modal.relativeCoordinates) }
+            if infoByte & 0x10 != 0 { modal.placementY = try readCoordinate(&reader, previous: modal.placementY, relative: modal.relativeCoordinates) }
         } else {
-            if infoByte & 0x20 != 0 { modal.x = try reader.readSignedInteger() }
-            if infoByte & 0x10 != 0 { modal.y = try reader.readSignedInteger() }
+            if infoByte & 0x20 != 0 { modal.placementX = try readCoordinate(&reader, previous: modal.placementX, relative: modal.relativeCoordinates) }
+            if infoByte & 0x10 != 0 { modal.placementY = try readCoordinate(&reader, previous: modal.placementY, relative: modal.relativeCoordinates) }
         }
 
         // Repetition: a grid keeps its compact form as one array
@@ -622,8 +649,8 @@ public enum OASISLibraryReader {
             let rep = try readRepetitionWithReuse(&reader, modal: &modal)
             modal.lastRepetition = rep
             if case .grid(let cols, let rows, let colSpace, let rowSpace) = rep {
-                let x = try checkedInt32(modal.x ?? 0, context: "placement x")
-                let y = try checkedInt32(modal.y ?? 0, context: "placement y")
+                let x = try checkedInt32(modal.placementX ?? 0, context: "placement x")
+                let y = try checkedInt32(modal.placementY ?? 0, context: "placement y")
                 let colOffset = try checkedMultiply(
                     checkedInt64(cols, context: "placement columns"),
                     checkedInt64(colSpace, context: "placement column spacing"),
@@ -656,8 +683,8 @@ public enum OASISLibraryReader {
                     properties: []
                 ))]
             }
-            let x = try checkedInt32(modal.x ?? 0, context: "placement x")
-            let y = try checkedInt32(modal.y ?? 0, context: "placement y")
+            let x = try checkedInt32(modal.placementX ?? 0, context: "placement x")
+            let y = try checkedInt32(modal.placementY ?? 0, context: "placement y")
             return try expand(
                 .cellRef(IRCellRef(
                     cellName: cellName,
@@ -669,8 +696,8 @@ public enum OASISLibraryReader {
             )
         }
 
-        let x = try checkedInt32(modal.x ?? 0, context: "placement x")
-        let y = try checkedInt32(modal.y ?? 0, context: "placement y")
+        let x = try checkedInt32(modal.placementX ?? 0, context: "placement x")
+        let y = try checkedInt32(modal.placementY ?? 0, context: "placement y")
 
         return [.cellRef(IRCellRef(
             cellName: cellName,
@@ -708,8 +735,8 @@ public enum OASISLibraryReader {
             deltaB = try reader.readSignedInteger()
         }
 
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
@@ -759,8 +786,8 @@ public enum OASISLibraryReader {
         if infoByte & 0x80 != 0 { modal.ctrapType = try reader.readUnsignedInteger() }
         if infoByte & 0x40 != 0 { modal.geometryW = try reader.readUnsignedInteger() }
         if infoByte & 0x20 != 0 { modal.geometryH = try reader.readUnsignedInteger() }
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
@@ -785,8 +812,8 @@ public enum OASISLibraryReader {
         if infoByte & 0x01 != 0 { modal.layer = try reader.readUnsignedInteger() }
         if infoByte & 0x02 != 0 { modal.datatype = try reader.readUnsignedInteger() }
         if infoByte & 0x20 != 0 { modal.circleRadius = try reader.readUnsignedInteger() }
-        if infoByte & 0x10 != 0 { modal.x = try reader.readSignedInteger() }
-        if infoByte & 0x08 != 0 { modal.y = try reader.readSignedInteger() }
+        if infoByte & 0x10 != 0 { modal.x = try readCoordinate(&reader, previous: modal.x, relative: modal.relativeCoordinates) }
+        if infoByte & 0x08 != 0 { modal.y = try readCoordinate(&reader, previous: modal.y, relative: modal.relativeCoordinates) }
 
         let repetition = try readGeometryRepetitionIfPresent(infoByte: infoByte, reader: &reader, modal: &modal)
 
@@ -866,12 +893,12 @@ public enum OASISLibraryReader {
             values = modal.lastPropertyValues ?? []
         }
 
-        return oasisPropertyToIR(name: propName, values: values)
+        return try oasisPropertyToIR(name: propName, values: values)
     }
 
-    private static func applyPropertyRepeat(modal: inout OASISModalState, elements: inout [IRElement]) {
+    private static func applyPropertyRepeat(modal: inout OASISModalState, elements: inout [IRElement]) throws {
         guard let name = modal.lastPropertyName, let values = modal.lastPropertyValues else { return }
-        let irProp = oasisPropertyToIR(name: name, values: values)
+        let irProp = try oasisPropertyToIR(name: name, values: values)
         if !elements.isEmpty {
             attachProperty(&elements[elements.count - 1], irProp)
         }
@@ -898,7 +925,7 @@ public enum OASISLibraryReader {
             case .propertyRepeat:
                 _ = try reader.readByte()
                 guard let name = modal.lastPropertyName, let values = modal.lastPropertyValues else { break }
-                let irProp = oasisPropertyToIR(name: name, values: values)
+                let irProp = try oasisPropertyToIR(name: name, values: values)
                 for index in range {
                     attachProperty(&elements[index], irProp)
                 }
@@ -908,7 +935,13 @@ public enum OASISLibraryReader {
         }
     }
 
-    private static func oasisPropertyToIR(name: String, values: [OASISPropertyValue]) -> IRProperty {
+    private static func oasisPropertyToIR(name: String, values: [OASISPropertyValue]) throws -> IRProperty {
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Property-string table references are unresolved.
+        // PATH and other library records reach this conversion; referenced bytes must be resolved
+        // with their string kind before an imported library can report success.
+        guard !values.contains(where: { if case .reference = $0 { true } else { false } }) else {
+            throw OASISError.unsupportedGeometry(context: "property reference", reason: "Property-string references require table resolution.")
+        }
         // Convert property values to string representation
         let valueStr: String
         if values.count == 1 {
@@ -1145,16 +1178,28 @@ public enum OASISLibraryReader {
         )
     }
 
-    private static func irPathType(from extensionScheme: UInt64) -> IRPathType {
-        // OASIS extension scheme is a packed bitfield:
-        // Bits 1:0 = start extension type (0=flush, 1=halfwidth, 2=explicit)
-        // Bits 3:2 = end extension type (same encoding)
-        // Use start extension type as representative
-        let startExt = extensionScheme & 0x03
-        switch startExt {
-        case 0: return .flush
-        case 1: return .halfWidthExtend
-        default: return .flush
+    private static func readEndpoint(
+        _ reader: inout OASISReader,
+        code: UInt64,
+        previous: OASISPathEndpoint?,
+        halfwidth: Int64
+    ) throws -> OASISPathEndpoint {
+        switch code {
+        case 0:
+            guard let previous else { throw OASISError.undefinedModal(context: "path endpoint reuse") }
+            return previous
+        case 1: return .flush
+        case 2: return .halfWidth(halfwidth)
+        default: return .explicit(try reader.readSignedInteger())
         }
+    }
+
+    private static func readCoordinate(
+        _ reader: inout OASISReader,
+        previous: Int64?,
+        relative: Bool
+    ) throws -> Int64 {
+        let value = try reader.readSignedInteger()
+        return relative ? try checkedAdd(previous ?? 0, value, context: "relative coordinate") : value
     }
 }

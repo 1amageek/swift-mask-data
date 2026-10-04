@@ -215,8 +215,11 @@ struct OASISRoundTripBugTests {
         // START
         w.writeByte(OASISRecordType.start.rawValue)
         try w.writeAString("1.0")
-        w.writeReal(0.001)
+        w.writeReal(1000)
+
         w.writeUnsignedInteger(0)
+
+        for _ in 0..<12 { w.writeUnsignedInteger(0) }
 
         // CELLNAME
         w.writeByte(OASISRecordType.cellname.rawValue)
@@ -239,9 +242,7 @@ struct OASISRoundTripBugTests {
         w.writeSignedInteger(20)      // Y
 
         // END
-        w.writeByte(OASISRecordType.end.rawValue)
-        try w.writeAString("")
-        w.writeUnsignedInteger(0)
+        w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
         let result = try OASISLibraryReader.read(w.data)
         #expect(result.cells.count == 1)
@@ -267,11 +268,11 @@ struct OASISRoundTripBugTests {
         var w = OASISWriter()
         w.writeMagic()
 
-        // START with offset-flag = 1 (tables present)
+        // START with offset-flag = 0 (tables in START)
         w.writeByte(OASISRecordType.start.rawValue)
         try w.writeAString("1.0")
-        w.writeReal(0.001)
-        w.writeUnsignedInteger(1) // offset-flag = 1 (non-zero)
+        w.writeReal(1000)
+        w.writeUnsignedInteger(0) // offset tables in START
 
         // 12 dummy table values (6 tables x 2 values each)
         for _ in 0..<12 {
@@ -298,9 +299,7 @@ struct OASISRoundTripBugTests {
         w.writeSignedInteger(0)       // Y
 
         // END
-        w.writeByte(OASISRecordType.end.rawValue)
-        try w.writeAString("")
-        w.writeUnsignedInteger(0)
+        w.writeBytes(OASISStandardCodingTests.endRecord(tables: false))
 
         // Must parse successfully without misaligned reads
         let result = try OASISLibraryReader.read(w.data)

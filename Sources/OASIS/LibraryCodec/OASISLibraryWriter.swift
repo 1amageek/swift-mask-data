@@ -44,12 +44,9 @@ public enum OASISLibraryWriter {
     ) throws {
         w.writeByte(OASISRecordType.start.rawValue)
         try w.writeAString("1.0") // version
-        // unit: dbuPerMicron as real (1 micron = dbuPerMicron database units)
-        // OASIS unit is the database unit size in microns = 1/dbuPerMicron
-        let unitInMicrons = 1.0 / scale.databaseUnitsPerMicrometer
-        w.writeReal(unitInMicrons)
-        // offset-flag: 0 = no offset tables
-        w.writeUnsignedInteger(0)
+        w.writeReal(scale.databaseUnitsPerMicrometer)
+        // Offset tables follow in END.
+        w.writeUnsignedInteger(1)
 
         // Store library name as PROPSTRING (record type 9) for round-trip
         w.writeByte(OASISRecordType.propstring.rawValue)
@@ -59,23 +56,22 @@ public enum OASISLibraryWriter {
     // MARK: - END
 
     private static func writeEndRecord(_ w: inout OASISWriter) throws {
-        // Pad to ensure 256-byte aligned end (simplified: just write END + padding)
         w.writeByte(OASISRecordType.end.rawValue)
-        // padding-string (empty)
-        try w.writeAString("")
-        // validation-scheme = 0 (none)
+        for _ in 0..<12 { w.writeUnsignedInteger(0) }
+        // 1 record byte + 12 table bytes + 2 length bytes + 240 padding + 1 validation.
+        w.writeBString(Data(repeating: 0, count: 240))
         w.writeUnsignedInteger(0)
     }
 
     // MARK: - Cell
 
     private static func writeCell(_ w: inout OASISWriter, _ cell: IRCell, cellNameTable: [String: UInt64]) throws {
-        // CELL record (record type 14): reference by number
+        // CELL record (record type 13): reference by number
         if let refNum = cellNameTable[cell.name] {
             w.writeByte(OASISRecordType.cellRef.rawValue)
             w.writeUnsignedInteger(refNum)
         } else {
-            // Fallback: CELL by name (record type 13)
+            // Fallback: CELL by name (record type 14)
             w.writeByte(OASISRecordType.cell.rawValue)
             try w.writeAString(cell.name)
         }
@@ -154,7 +150,7 @@ public enum OASISLibraryWriter {
         try writeUnsignedLayerValue(&w, field: "datatype", value: b.datatype)
 
         // Convert absolute points to delta-encoded point list (excluding close point)
-        let deltas = try absoluteToDeltas(b.points, context: "boundary")
+        let deltas = try absoluteToDeltas(b.points, excludingClosingPoint: true, context: "boundary")
         w.writePointList(deltas)
 
         // X, Y of first point
@@ -176,11 +172,18 @@ public enum OASISLibraryWriter {
         w.writeUnsignedInteger(UInt64(p.width / 2))  // half-width
 
         // Extension scheme: encode pathType
-        let extScheme = try oasisExtensionScheme(p.pathType)
+        let extScheme = try oasisExtensionScheme(p)
         w.writeUnsignedInteger(extScheme)
+        if p.pathType == .customExtension {
+            guard let begin = p.beginExtension, let end = p.endExtension else {
+                throw OASISError.unsupportedGeometry(context: "path", reason: "Both custom endpoint extensions are required.")
+            }
+            w.writeSignedInteger(Int64(begin))
+            w.writeSignedInteger(Int64(end))
+        }
 
         // Point list (deltas from first point)
-        let deltas = try absoluteToDeltas(p.points, context: "path")
+        let deltas = try absoluteToDeltas(p.points, excludingClosingPoint: false, context: "path")
         w.writePointList(deltas)
 
         // X, Y of first point
@@ -417,12 +420,12 @@ public enum OASISLibraryWriter {
     // MARK: - Helpers
 
     /// Convert absolute point sequence to delta-encoded (skip closing point for polygons).
-    private static func absoluteToDeltas(_ points: [IRPoint], context: String) throws -> [IRPoint] {
+    private static func absoluteToDeltas(_ points: [IRPoint], excludingClosingPoint: Bool, context: String) throws -> [IRPoint] {
         guard points.count > 1 else { return points }
 
         // For polygons, exclude the closing point (last == first)
         let effectivePoints: ArraySlice<IRPoint>
-        if points.count >= 3 && points.first == points.last {
+        if excludingClosingPoint && points.count >= 3 && points.first == points.last {
             effectivePoints = points[0..<(points.count - 1)]
         } else {
             effectivePoints = points[0..<points.count]
@@ -472,28 +475,26 @@ public enum OASISLibraryWriter {
             let value = parts.count > 1 ? String(parts[1]) : prop.value
 
             try w.writeAString(name)       // inline property name
-            // Write 1 value: a-string (type 3)
-            w.writeUnsignedInteger(3)  // property value type = a-string
+            // Write one standard a-string property value (type 10).
+            w.writeUnsignedInteger(10)  // property value type = a-string
             try w.writeAString(value)
         }
     }
 
-    /// Map IRPathType to OASIS extension scheme value.
-    private static func oasisExtensionScheme(_ pathType: IRPathType) throws -> UInt64 {
-        switch pathType {
-        case .flush:
-            return 0           // both ends flush (0b0000)
-        case .halfWidthExtend:
-            return 5           // both ends halfwidth (0b0101)
+    /// Every exported path defines both endpoints independently of prior records.
+    private static func oasisExtensionScheme(_ path: IRPath) throws -> UInt64 {
+        if path.pathType != .customExtension,
+           path.beginExtension != nil || path.endExtension != nil {
+            throw OASISError.unsupportedGeometry(context: "path", reason: "Endpoint fields require customExtension path type.")
+        }
+        switch path.pathType {
+        case .flush: return 5
+        case .halfWidthExtend: return 10
+        case .customExtension: return 15
         case .round:
             throw OASISError.unsupportedGeometry(
                 context: "path",
-                reason: "OASIS PATH round end caps are not represented by this writer without approximation."
-            )
-        case .customExtension:
-            throw OASISError.unsupportedGeometry(
-                context: "path",
-                reason: "OASIS PATH custom extensions are not represented by this writer without approximation."
+                reason: "OASIS PATH does not represent round end caps without approximation."
             )
         }
     }
