@@ -361,100 +361,109 @@ public enum DEFLibraryReader {
         var i = start
         var pins: [DEFPin] = []
 
+        func require(_ expected: String, pinName: String) throws {
+            guard i < tokens.count, tokens[i] == expected else {
+                throw DEFError.invalidPinSyntax(pinName: pinName, expected: expected,
+                                               token: i < tokens.count ? tokens[i] : nil)
+            }
+            i += 1
+        }
+        func value(pinName: String, field: String) throws -> String {
+            guard i < tokens.count, !["+", ";", "(", ")"].contains(tokens[i]) else {
+                throw DEFError.invalidPinSyntax(pinName: pinName, expected: field,
+                                               token: i < tokens.count ? tokens[i] : nil)
+            }
+            let token = tokens[i]; i += 1
+            return token
+        }
+        func point(pinName: String, field: String) throws -> (Int32, Int32) {
+            try require("(", pinName: pinName)
+            let x = try parseInt32(tokens, at: i, context: "PIN \(pinName) \(field) x"); i += 1
+            let y = try parseInt32(tokens, at: i, context: "PIN \(pinName) \(field) y"); i += 1
+            try require(")", pinName: pinName)
+            return (x, y)
+        }
+
         while i < tokens.count {
             if tokens[i].uppercased() == "END" {
                 i += 1
                 if i < tokens.count && tokens[i].uppercased() == "PINS" { i += 1 }
                 return (pins, i)
             }
-            if tokens[i] == "-" {
-                i += 1
-                guard i < tokens.count else { break }
-                let name = tokens[i]; i += 1
-                var pin = DEFPin(name: name)
-
-                while i < tokens.count && tokens[i] != ";" {
-                    if tokens[i] == "+" {
-                        i += 1
-                        guard i < tokens.count else { break }
-                        let kw = tokens[i].uppercased()
-                        if kw == "NET" {
-                            i += 1
-                            if i < tokens.count { pin.netName = tokens[i]; i += 1 }
-                        } else if kw == "DIRECTION" {
-                            i += 1
-                            if i < tokens.count {
-                                pin.direction = DEFPin.Direction(rawValue: tokens[i].uppercased())
-                                i += 1
-                            }
-                        } else if kw == "USE" {
-                            i += 1
-                            if i < tokens.count {
-                                pin.use = DEFSpecialNet.NetUse(rawValue: tokens[i].uppercased())
-                                i += 1
-                            }
-                        } else if kw == "LAYER" {
-                            i += 1
-                            if i < tokens.count { pin.layerName = tokens[i]; i += 1 }
-                            // Parse optional rect after LAYER
-                            if i < tokens.count && tokens[i] == "(" {
-                                var rects: [DEFRect] = []
-                                while i < tokens.count && tokens[i] == "(" {
-                                    i += 1
-                                    if i + 3 < tokens.count {
-                                        let x1 = try parseInt32(tokens, at: i, context: "PIN \(name) layer rect x1")
-                                        let y1 = try parseInt32(tokens, at: i + 1, context: "PIN \(name) layer rect y1")
-                                        i += 2
-                                        i = skip(")", tokens, i)
-                                        i = skip("(", tokens, i)
-                                        if i + 1 < tokens.count {
-                                            let x2 = try parseInt32(tokens, at: i, context: "PIN \(name) layer rect x2")
-                                            let y2 = try parseInt32(tokens, at: i + 1, context: "PIN \(name) layer rect y2")
-                                            rects.append(DEFRect(x1: x1, y1: y1, x2: x2, y2: y2))
-                                            i += 2
-                                        }
-                                        i = skip(")", tokens, i)
-                                    } else {
-                                        i = skip(")", tokens, i)
-                                    }
-                                }
-                                if !rects.isEmpty, let layerName = pin.layerName {
-                                    pin.layerRects.append(DEFPinLayerRect(layerName: layerName, rects: rects))
-                                }
-                            }
-                        } else if kw == "PLACED" || kw == "FIXED" || kw == "COVER" || kw == "UNPLACED" {
-                            pin.placementStatus = DEFComponent.PlacementStatus(rawValue: kw)
-                            i += 1
-                            if kw != "UNPLACED" {
-                                i = skip("(", tokens, i)
-                                if i < tokens.count { pin.x = try parseInt32(tokens, at: i, context: "PIN \(name) placement x"); i += 1 }
-                                if i < tokens.count { pin.y = try parseInt32(tokens, at: i, context: "PIN \(name) placement y"); i += 1 }
-                                i = skip(")", tokens, i)
-                                if i < tokens.count, let o = DEFOrientation(rawValue: tokens[i].uppercased()) {
-                                    pin.orientation = o; i += 1
-                                }
-                            }
-                        } else if kw == "SPECIAL" {
-                            pin.special = true
-                            i += 1
-                        } else if kw == "PROPERTY" {
-                            i += 1
-                            let (p, next) = parseProperties(tokens, from: i)
-                            pin.properties = p; i = next
-                        } else {
-                            i += 1
-                        }
-                    } else {
-                        i += 1
+            try require("-", pinName: "<unnamed>")
+            let name = try value(pinName: "<unnamed>", field: "pin name")
+            var pin = DEFPin(name: name)
+            var explicitPort = false
+            while i < tokens.count && tokens[i] != ";" {
+                try require("+", pinName: name)
+                let kw = try value(pinName: name, field: "pin clause").uppercased()
+                switch kw {
+                case "NET":
+                    pin.netName = try value(pinName: name, field: "net name")
+                case "DIRECTION":
+                    let token = try value(pinName: name, field: "direction").uppercased()
+                    guard let direction = DEFPin.Direction(rawValue: token) else {
+                        throw DEFError.invalidPinValue(pinName: name, field: "DIRECTION", token: token)
                     }
+                    pin.direction = direction
+                case "USE":
+                    let token = try value(pinName: name, field: "use").uppercased()
+                    guard let use = DEFSpecialNet.NetUse(rawValue: token) else {
+                        throw DEFError.invalidPinValue(pinName: name, field: "USE", token: token)
+                    }
+                    pin.use = use
+                case "PORT":
+                    // FIXME(INCOMPLETE_IMPLEMENTATION): DEFPin cannot retain multiple port partitions.
+                    // Public DEF reads must fail until all ports and their poses can be represented.
+                    guard !explicitPort, pin.layerRects.isEmpty, pin.layerName == nil,
+                          pin.placementStatus == nil else {
+                        throw DEFError.unsupportedPinFeature(pinName: name, feature: "multiple PORTs")
+                    }
+                    explicitPort = true
+                case "LAYER":
+                    let layer = try value(pinName: name, field: "layer name")
+                    pin.layerName = layer
+                    // FIXME(INCOMPLETE_IMPLEMENTATION): Pin layer modifiers have no AST storage.
+                    // Public DEF reads must fail until mask/spacing/width semantics round-trip.
+                    if i < tokens.count, ["MASK", "SPACING", "DESIGNRULEWIDTH"].contains(tokens[i].uppercased()) {
+                        throw DEFError.unsupportedPinFeature(pinName: name, feature: tokens[i].uppercased())
+                    }
+                    var rects: [DEFRect] = []
+                    while i < tokens.count && tokens[i] == "(" {
+                        let first = try point(pinName: name, field: "layer rect first")
+                        let second = try point(pinName: name, field: "layer rect second")
+                        rects.append(DEFRect(x1: first.0, y1: first.1, x2: second.0, y2: second.1))
+                    }
+                    if !rects.isEmpty { pin.layerRects.append(.init(layerName: layer, rects: rects)) }
+                case "PLACED", "FIXED", "COVER", "UNPLACED":
+                    // FIXME(INCOMPLETE_IMPLEMENTATION): DEFPin owns only one placement.
+                    // Public DEF reads must fail until independent port placements are retained.
+                    guard pin.placementStatus == nil else {
+                        throw DEFError.unsupportedPinFeature(pinName: name, feature: "multiple placements")
+                    }
+                    pin.placementStatus = DEFComponent.PlacementStatus(rawValue: kw)
+                    if kw != "UNPLACED" {
+                        let placement = try point(pinName: name, field: "placement")
+                        let token = try value(pinName: name, field: "orientation").uppercased()
+                        guard let orientation = DEFOrientation(rawValue: token) else {
+                            throw DEFError.invalidPinValue(pinName: name, field: "orientation", token: token)
+                        }
+                        pin.x = placement.0; pin.y = placement.1; pin.orientation = orientation
+                    }
+                case "SPECIAL":
+                    pin.special = true
+                case "PROPERTY":
+                    let (properties, next) = parseProperties(tokens, from: i)
+                    pin.properties.append(contentsOf: properties); i = next
+                default:
+                    // FIXME(INCOMPLETE_IMPLEMENTATION): Polygon/via and other pin clauses lack AST storage.
+                    // Public DEF reads must fail until each clause is represented and round-trips.
+                    throw DEFError.unsupportedPinFeature(pinName: name, feature: kw)
                 }
-                i = skip(";", tokens, i)
-                pins.append(pin)
-            } else {
-                i += 1
             }
+            try require(";", pinName: name)
+            pins.append(pin)
         }
-
         return (pins, i)
     }
 

@@ -33,6 +33,31 @@ The reader preserves explicit regular/special point extensions and rejects unsup
 route profiles before returning a successful document. Public DEF values do
 not imply a LEF master size, cell pin location or qualified process connectivity.
 
+### PINS admission
+
+`DEFLibraryReader.read` owns atomic pin syntax admission before returning a document.
+The existing `DEFPin` represents one implicit rectangular port, its layer rectangles,
+one placement/orientation, direction/use, net, special flag and properties. One explicit
+`PORT` before geometry is semantically that same port and may normalize to it. A second
+port, polygon, pin via, layer mask/spacing/design-rule-width or other unrepresented pin
+clause fails with `unsupportedPinFeature`; geometry is never partially accepted.
+Unknown direction/use/orientation values fail with `invalidPinValue`, and malformed
+supported point syntax fails with `invalidPinSyntax`. Missing optional attributes stay
+absent; unsupported values never become nil or the default N orientation. Multiple
+placements cannot overwrite an earlier pose. Raw coordinates remain in source DEF DBU.
+This is a bounded reader profile, not a full DEF grammar or process validation.
+
+The grammar authority is the Cadence *LEF/DEF 5.8 Language Reference*, Pins pp.279–280
+and 288–289 ([reference PDF](https://www.kaixinspace.com/wp-content/uploads/2025/02/lefdefref.pdf)).
+PORT connectivity partitions cannot be reconstructed from flat rectangles; downstream
+consumers therefore rely on parser admission rather than scanning original text.
+
+| Input | Output | Behavioral owner |
+|---|---|---|
+| Rectangular single port, standard direction/use/pose | Exact supported AST and writer round trip | DEF pin admission tests |
+| Supported rectangle plus unrepresented shape/port | Typed unsupported, no returned document | DEF pin admission tests |
+| Unknown enum value or malformed point/pose | Typed invalid, no returned document | DEF pin admission tests |
+
 ## Verification and Change Impact
 
 DEFTests owns orientation semantics and format behavior. Native consumers separately
