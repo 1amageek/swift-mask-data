@@ -1,4 +1,5 @@
 public enum GDSError: Error, Sendable {
+    case unsupportedGeometry(context: String, reason: String)
     case unexpectedEndOfData(offset: Int)
     case invalidRecordLength(offset: Int, length: UInt16)
     case unknownRecordType(offset: Int, rawValue: UInt8)

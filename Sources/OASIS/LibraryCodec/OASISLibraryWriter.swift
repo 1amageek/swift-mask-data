@@ -6,6 +6,14 @@ import LayoutIR
 public enum OASISLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
+        // Production write calls must reject before serialization until resolved geometry and
+        // the explicit via role can be preserved by the standard encoding.
+        for cell in library.cells {
+            for element in cell.elements {
+                if case .via = element { throw OASISError.unsupportedGeometry(context: "via", reason: "Named via requires a bound master and role-preserving encoding.") }
+            }
+        }
         var w = OASISWriter()
         let scale = library.databaseUnitScale
 
@@ -85,6 +93,8 @@ public enum OASISLibraryWriter {
 
     private static func writeElement(_ w: inout OASISWriter, _ element: IRElement, cellNameTable: [String: UInt64]) throws {
         switch element {
+        case .via:
+            throw OASISError.unsupportedGeometry(context: "via", reason: "Named via requires a bound master and role-preserving encoding.")
         case .boundary(let b):
             try writeBoundary(&w, b)
             try writeProperties(&w, b.properties)

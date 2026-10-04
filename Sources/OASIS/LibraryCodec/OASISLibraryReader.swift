@@ -437,6 +437,9 @@ public enum OASISLibraryReader {
     private static func translate(_ element: IRElement, by offset: OASISDisplacement) throws -> IRElement {
         guard offset.dx != 0 || offset.dy != 0 else { return element }
         switch element {
+        case .via(let via):
+            return .via(IRVia(viaName: via.viaName, origin: try translate(via.origin, by: offset),
+                transform: via.transform, routeLayer: via.routeLayer, properties: via.properties))
         case .boundary(var boundary):
             boundary.points = try boundary.points.map { try translate($0, by: offset) }
             return .boundary(boundary)
@@ -973,6 +976,9 @@ public enum OASISLibraryReader {
 
     private static func attachProperty(_ element: inout IRElement, _ prop: IRProperty) {
         switch element {
+        case .via(let via):
+            element = .via(IRVia(viaName: via.viaName, origin: via.origin, transform: via.transform,
+                routeLayer: via.routeLayer, properties: via.properties + [prop]))
         case .boundary(var b):
             b.properties.append(prop)
             element = .boundary(b)

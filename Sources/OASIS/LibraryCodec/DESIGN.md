@@ -20,6 +20,11 @@ flowchart LR
 ```
 
 ## Contracts and Invariants
+
+Named via output follows [ViaPlacement](../../LayoutIR/ViaPlacement/DESIGN.md):
+without a bound master resolver, `IRElement.via` causes a typed failure before
+serialization or document publication. No placement is silently skipped.
+
 START units are DBU per micrometer. Offset flag 0 places twelve table values in START; flag 1 places them in END. Writer emits flag 1 and a 256-byte END with validation scheme 0. Reader requires END and rejects unsupported validation rather than claiming verification.
 PATH scheme bits 3:2 own begin and bits 1:0 own end: 0 reuses, 1 resolves zero, 2 resolves the current half-width, 3 reads an explicit signed value. Begin explicit bytes precede end bytes. Omitted scheme retains the resolved values even after a width change. An explicit value remains custom even when numerically zero or half-width; other asymmetric retained values become custom. PATH point lists reuse independently of polygon lists. Required unset modalities fail; coordinates start at zero.
 

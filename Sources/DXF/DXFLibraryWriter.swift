@@ -17,6 +17,14 @@ public enum DXFLibraryWriter {
     }
 
     public static func write(_ library: IRLibrary, options: Options = .init()) throws -> Data {
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
+        // Production write calls must reject before serialization until resolved geometry and
+        // the explicit via role can be preserved by the standard encoding.
+        for cell in library.cells {
+            for element in cell.elements {
+                if case .via = element { throw DXFError.unsupportedEntity("Named via requires a bound master and role-preserving encoding.") }
+            }
+        }
         let dbu = library.databaseUnitScale.databaseUnitsPerMicrometer
         var lines: [String] = []
 
@@ -159,6 +167,8 @@ public enum DXFLibraryWriter {
 
     private static func writeElement(_ element: IRElement, to lines: inout [String], dbu: Double, options: Options) throws {
         switch element {
+        case .via:
+            throw DXFError.unsupportedEntity("Named via requires a bound master and role-preserving encoding.")
         case .boundary(let b):
             try writeBoundary(b, to: &lines, dbu: dbu, options: options)
         case .path(let p):
@@ -355,6 +365,7 @@ public enum DXFLibraryWriter {
 
     private static func elementLayer(_ element: IRElement) -> Int16 {
         switch element {
+        case .via(let via): return via.routeLayer
         case .boundary(let b): return b.layer
         case .path(let p): return p.layer
         case .text(let t): return t.layer

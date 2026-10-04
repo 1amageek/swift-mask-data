@@ -80,12 +80,14 @@ public struct DEFRoutePoint: Hashable, Sendable, Codable {
     public var y: Int32?
     public var ext: Int32?
     public var viaName: String?
+    public var viaOrientation: DEFOrientation?
 
-    public init(x: Int32? = nil, y: Int32? = nil, ext: Int32? = nil, viaName: String? = nil) {
+    public init(x: Int32? = nil, y: Int32? = nil, ext: Int32? = nil, viaName: String? = nil, viaOrientation: DEFOrientation? = nil) {
         self.x = x
         self.y = y
         self.ext = ext
         self.viaName = viaName
+        self.viaOrientation = viaOrientation
     }
 
     /// Resolved point (nil → previous coordinate).

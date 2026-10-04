@@ -30,7 +30,8 @@ let package = Package(
             dependencies: [
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
                 .product(name: "CircuiteFoundationFoundation", package: "CircuiteFoundation"),
-            ]
+            ],
+            exclude: ["DESIGN.md", "ViaPlacement/DESIGN.md"]
         ),
         .target(
             name: "GDSII",

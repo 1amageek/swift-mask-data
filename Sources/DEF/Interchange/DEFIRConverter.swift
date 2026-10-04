@@ -61,7 +61,6 @@ public enum DEFIRConverter {
     private static let routeLayerNamePropertyKey = "def.route.layerName"
     private static let routeWidthPropertyKey = "def.route.width"
     private static let routeShapePropertyKey = "def.route.shape"
-    private static let routeViaNamePropertyKey = "def.route.viaName"
     private static let routeSpecialPointsPropertyKey = "def.route.specialPoints"
 
     /// Convert a DEFDocument to an IRLibrary.
@@ -131,13 +130,21 @@ public enum DEFIRConverter {
                     }
                     var part = wire
                     part.points = [points[index - 1], points[index]]
-                    part.viaName = index == points.count - 1 ? wire.viaName : nil
+                    part.viaName = nil
                     elements.append(.path(IRPath(
                         layer: try layerNumbers.number(for: wire.layerName), datatype: 0,
                         pathType: begin == nil ? .halfWidthExtend : .customExtension,
                         width: 1, points: part.points,
                         properties: regularRouteProperties(net: net, wire: part),
                         beginExtension: begin, endExtension: end)))
+                }
+                if let name = wire.viaName, let origin = points.last {
+                    var provenance = wire
+                    provenance.viaName = nil
+                    elements.append(.via(IRVia(viaName: name, origin: origin,
+                        transform: orientationToTransform(wire.viaOrientation),
+                        routeLayer: try layerNumbers.number(for: wire.layerName),
+                        properties: regularRouteProperties(net: net, wire: provenance))))
                 }
             }
         }
@@ -153,10 +160,7 @@ public enum DEFIRConverter {
                     part.points = [
                         DEFRoutePoint(x: points[index - 1].x, y: points[index - 1].y, ext: coordinatePoints[index - 1].ext),
                         DEFRoutePoint(x: points[index].x, y: points[index].y, ext: coordinatePoints[index].ext)]
-                    if points.count == 2 { part.points = segment.points }
-                    else if index == points.count - 1, let via = segment.points.last, via.viaName != nil {
-                        part.points.append(via)
-                    }
+                    if points.count == 2 { part.points = coordinatePoints }
                     elements.append(.path(IRPath(
                         layer: try layerNumbers.number(for: segment.layerName), datatype: 0,
                         pathType: begin == 0 && end == 0 ? .flush : .customExtension,
@@ -164,6 +168,14 @@ public enum DEFIRConverter {
                         properties: specialRouteProperties(net: specialNet, segment: part),
                         beginExtension: begin == 0 && end == 0 ? nil : begin,
                         endExtension: begin == 0 && end == 0 ? nil : end)))
+                }
+                if let via = segment.points.last, let name = via.viaName, let origin = points.last {
+                    var provenance = segment
+                    provenance.points = []
+                    elements.append(.via(IRVia(viaName: name, origin: origin,
+                        transform: orientationToTransform(via.viaOrientation ?? .n),
+                        routeLayer: try layerNumbers.number(for: segment.layerName),
+                        properties: specialRouteProperties(net: specialNet, segment: provenance))))
                 }
             }
         }
@@ -212,6 +224,17 @@ public enum DEFIRConverter {
             designName: library.name,
             dbuPerMicron: library.databaseUnitScale.databaseUnitsPerMicrometer
         )
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Hierarchical via export requires resolved flattening.
+        // Production DEF inverse conversion must fail until every child placement can retain
+        // its transformed master and net provenance in top-level route records.
+        for cell in library.cells.dropFirst() {
+            for element in cell.elements {
+                if case .via(let via) = element {
+                    throw DEFIRConverterError.unsupportedRouteGeometry(netName: "", layerName: String(via.routeLayer),
+                        reason: "DEF cannot preserve a via placement in a non-top cell without resolved flattening.")
+                }
+            }
+        }
         guard let topCell = library.cells.first else { return doc }
         let hasPinMetadata = propertyValue(topCell.properties, key: pinCountPropertyKey) != nil
 
@@ -222,6 +245,8 @@ public enum DEFIRConverter {
 
         for element in topCell.elements {
             switch element {
+            case .via(let via):
+                try appendVia(via, to: &doc)
             case .cellRef(let ref):
                 let orient = try transformToOrientation(ref.transform)
                 doc.components.append(DEFComponent(
@@ -328,15 +353,12 @@ public enum DEFIRConverter {
     }
 
     private static func regularRouteProperties(net: DEFNet, wire: DEFRouteWire) -> [IRProperty] {
-        var properties = [
+        let properties = [
             property(key: routeKindPropertyKey, value: "net"),
             property(key: routeNetNamePropertyKey, value: net.name),
             property(key: routeStatusPropertyKey, value: wire.status.rawValue),
             property(key: routeLayerNamePropertyKey, value: wire.layerName),
         ]
-        if let viaName = wire.viaName {
-            properties.append(property(key: routeViaNamePropertyKey, value: viaName))
-        }
         return properties
     }
 
@@ -355,7 +377,44 @@ public enum DEFIRConverter {
         return properties
     }
 
+    private static func appendVia(_ via: IRVia, to doc: inout DEFDocument) throws {
+        let netName = propertyValue(via.properties, key: routeNetNamePropertyKey) ?? ""
+        let layerName = propertyValue(via.properties, key: routeLayerNamePropertyKey) ?? ""
+        guard !via.viaName.isEmpty, via.routeLayer > 0, !netName.isEmpty, !layerName.isEmpty,
+              let kind = propertyValue(via.properties, key: routeKindPropertyKey),
+              let status = propertyValue(via.properties, key: routeStatusPropertyKey) else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName,
+                reason: "Via export requires a named master and exact DEF route provenance.")
+        }
+        let orientation = try transformToOrientation(via.transform)
+        switch kind {
+        case "net":
+            guard let status = DEFRouteWire.RouteStatus(rawValue: status) else {
+                throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName, reason: "Invalid via route status.")
+            }
+            let index = ensureNet(named: netName, in: &doc)
+            doc.nets[index].routing.append(DEFRouteWire(status: status, layerName: layerName,
+                points: [via.origin], viaName: via.viaName, viaOrientation: orientation))
+        case "specialNet":
+            guard let status = DEFRouteSegment.RouteStatus(rawValue: status),
+                  let rawWidth = propertyValue(via.properties, key: routeWidthPropertyKey),
+                  let width = Int32(rawWidth), width > 0, width % 2 == 0 else {
+                throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName, reason: "Invalid special via route status or source width.")
+            }
+            let index = ensureSpecialNet(named: netName, in: &doc)
+            doc.specialNets[index].routing.append(DEFRouteSegment(status: status, layerName: layerName, width: width,
+                points: [DEFRoutePoint(x: via.origin.x, y: via.origin.y), DEFRoutePoint(viaName: via.viaName, viaOrientation: orientation)],
+                shape: propertyValue(via.properties, key: routeShapePropertyKey).flatMap(DEFRouteSegment.RouteShape.init(rawValue:))))
+        default:
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName, reason: "Invalid via route kind.")
+        }
+    }
+
     private static func appendRoute(_ path: IRPath, to doc: inout DEFDocument) throws {
+        guard propertyValue(path.properties, key: "def.route.viaName") == nil else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: "", layerName: String(path.layer),
+                reason: "Named vias require typed placements separate from path geometry.")
+        }
         guard let kind = propertyValue(path.properties, key: routeKindPropertyKey),
               let netName = propertyValue(path.properties, key: routeNetNamePropertyKey) else {
             return
@@ -370,7 +429,6 @@ public enum DEFIRConverter {
                 status: status,
                 layerName: layerName,
                 points: path.points,
-                viaName: propertyValue(path.properties, key: routeViaNamePropertyKey),
                 pointExtensions: try exportedExtensions(path, regular: true, netName: netName, layerName: layerName)
             )
             let index = ensureNet(named: netName, in: &doc)
@@ -381,10 +439,13 @@ public enum DEFIRConverter {
             let shape = propertyValue(path.properties, key: routeShapePropertyKey)
                 .flatMap(DEFRouteSegment.RouteShape.init(rawValue:))
             let encodedPoints = propertyValue(path.properties, key: routeSpecialPointsPropertyKey).map(decodeSpecialPoints)
+            guard encodedPoints?.allSatisfy({ $0.viaName == nil }) ?? true else {
+                throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: layerName,
+                    reason: "Named vias require typed placements separate from path geometry.")
+            }
             var points = encodedPoints ?? path.points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
             if resolvedPoints(for: DEFRouteSegment(layerName: layerName, points: points)) != path.points {
                 points = path.points.map { DEFRoutePoint(x: $0.x, y: $0.y) }
-                if let via = encodedPoints?.last, via.viaName != nil { points.append(via) }
             }
             let extensions = try exportedExtensions(path, regular: false, netName: netName, layerName: layerName)
             var coordinateIndex = 0
@@ -642,12 +703,16 @@ public enum DEFIRConverter {
                 reason: "DEF regular route requires an explicit layer name."
             )
         }
-        guard wire.points.count >= 2 else {
+        guard wire.points.count >= 2 || (wire.points.count == 1 && wire.viaName?.isEmpty == false) else {
             throw DEFIRConverterError.invalidRouteGeometry(
                 netName: netName,
                 layerName: wire.layerName,
                 reason: "DEF regular route requires at least two placement points."
             )
+        }
+        guard wire.viaName == nil || wire.viaName?.isEmpty == false else {
+            throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: wire.layerName,
+                reason: "Via master names must be nonempty.")
         }
         guard !wire.taper && wire.style == nil else {
             throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: wire.layerName,
@@ -657,6 +722,12 @@ public enum DEFIRConverter {
               wire.pointExtensions.allSatisfy({ $0.map { $0 >= 0 } ?? true }) else {
             throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: wire.layerName,
                 reason: "Regular route extensions must align with points and be nonnegative.")
+        }
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Standalone point extensions lack wire geometry.
+        // DEF import must reject them until a standard placement interpretation is implemented.
+        guard wire.points.count != 1 || wire.pointExtensions.allSatisfy({ $0 == nil }) else {
+            throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: wire.layerName,
+                reason: "Standalone via placements cannot carry wire extensions.")
         }
         try validateOrthogonalSegments(wire.points, netName: netName, layerName: wire.layerName)
         return wire.points
@@ -685,7 +756,7 @@ public enum DEFIRConverter {
                 reason: "SPECIALNETS requires an even DBU width.")
         }
         let points = resolvedPoints(for: segment)
-        guard points.count >= 2 else {
+        guard points.count >= 2 || (points.count == 1 && segment.points.last?.viaName?.isEmpty == false) else {
             throw DEFIRConverterError.invalidRouteGeometry(
                 netName: netName,
                 layerName: segment.layerName,
@@ -694,9 +765,15 @@ public enum DEFIRConverter {
         }
         guard let first = segment.points.first, first.x != nil, first.y != nil, first.viaName == nil,
               segment.points.dropLast().allSatisfy({ $0.viaName == nil }),
-              segment.points.allSatisfy({ $0.ext.map { $0 >= 0 } ?? true }) else {
+              segment.points.allSatisfy({ ($0.ext.map { $0 >= 0 } ?? true) && ($0.viaName == nil || $0.viaName?.isEmpty == false) }) else {
             throw DEFIRConverterError.invalidRouteGeometry(netName: netName, layerName: segment.layerName,
                 reason: "Special routes require an explicit first point, nonnegative extensions, and only a terminal via.")
+        }
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Standalone point extensions lack wire geometry.
+        // DEF import must reject them until a standard placement interpretation is implemented.
+        guard points.count != 1 || segment.points.allSatisfy({ $0.ext == nil }) else {
+            throw DEFIRConverterError.unsupportedRouteGeometry(netName: netName, layerName: segment.layerName,
+                reason: "Standalone via placements cannot carry wire extensions.")
         }
         try validateOrthogonalSegments(points, netName: netName, layerName: segment.layerName)
         return points

@@ -28,6 +28,11 @@ flowchart LR
 
 ## Contracts and Invariants
 
+Named via output follows [ViaPlacement](../../LayoutIR/ViaPlacement/DESIGN.md):
+without a bound master resolver, `IRElement.via` causes a typed failure before
+serialization or document publication. No placement is silently skipped.
+
+
 - Physical coordinates round to the nearest integer only when the difference is
   at most one ULP of the scaled Double, accounting for binary multiplication
   noise. Larger differences fail with a typed off-grid error.

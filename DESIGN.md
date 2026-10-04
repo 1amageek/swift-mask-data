@@ -22,6 +22,7 @@ owned by the [LEF module design](Sources/LEF/DESIGN.md).
 | Design | Relationship | Contract Used | Summary | Cautions |
 |---|---|---|---|---|
 | [LSI](../DESIGN.md) | Parent | Exact standard data and explicit loss | Standalone platform composition | Codec success does not qualify a process |
+| [LayoutIR](Sources/LayoutIR/DESIGN.md) | Child | Owned geometry and typed named via placements | Shared representation | Master resolution belongs to technology consumers |
 | [OASIS](Sources/OASIS/DESIGN.md) | Child | Standard binary coding and modal paths | Signed physical interchange | Independent-byte evidence is required |
 | [LEF](Sources/LEF/DESIGN.md) | Child | Typed parsing and geometry conversion | Physical interchange boundary | Off-grid source geometry is rejected |
 | [MaskGeometry](Sources/MaskGeometry/DESIGN.md) | Child | Exact bounded decomposition | Native geometry consumers | Electrical semantics remain downstream |

@@ -54,7 +54,12 @@ WIDTH before evaluating geometry, then apply `halfWidthExtend` symbolically.
 | NETS, one omitted and one explicit | No successful geometry | Typed unsupported: physical width required |
 | SPECIALNETS | `flush` for zero/zero, otherwise `customExtension` | Width must be positive/even |
 
-The bounded route profile accepts nonzero orthogonal segments and a terminal via.
+The bounded route profile accepts nonzero orthogonal segments and named via placements.
+A single coordinate followed by a named via is a standalone `IRElement.via`, never
+a zero-length `IRPath`. A terminal named via after a wire is also a separate placement.
+All eight standard orientations are retained through the existing IRTransform contract.
+The [ViaPlacement contract](../../LayoutIR/ViaPlacement/DESIGN.md) owns typed fields and
+unresolved format-output admission. Standalone via point extensions are rejected.
 45-degree styles, TAPER/TAPERRULE/STYLE/NONDEFAULTRULE, masks, virtual/rect geometry,
 and an in-path via continuation require additional semantics and fail explicitly.
 The text reader rejects unknown geometric tokens instead of skipping them. First

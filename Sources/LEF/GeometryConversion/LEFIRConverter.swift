@@ -100,6 +100,14 @@ public enum LEFIRConverter {
     /// Convert an IRLibrary to a LEFDocument.
     /// Each IRCell becomes a MACRO. Boundaries become OBS geometry.
     public static func toLEFDocument(_ library: IRLibrary) throws -> LEFDocument {
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
+        // Production inverse conversion must fail before publishing a document until resolved
+        // placement geometry and the explicit via role can be represented without loss.
+        for cell in library.cells {
+            for element in cell.elements {
+                if case .via = element { throw LEFError.invalidGeometry("Named via requires a bound master and role-preserving encoding.") }
+            }
+        }
         let dbu = library.databaseUnitScale.databaseUnitsPerMicrometer
         var macros: [LEFMacroDef] = []
         var usedLayers: Set<Int16> = []

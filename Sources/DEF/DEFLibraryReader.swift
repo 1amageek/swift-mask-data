@@ -563,6 +563,7 @@ public enum DEFLibraryReader {
             extensions.append(ext)
         }
         var viaName: String?
+        var viaOrientation: DEFOrientation = .n
         if i < tokens.count, !["+", ";", "NEW"].contains(tokens[i].uppercased()) {
             let feature = tokens[i].uppercased()
             guard !["MASK", "RECT", "VIRTUAL", "TAPER", "TAPERRULE", "STYLE", "NONDEFAULTRULE"].contains(feature),
@@ -571,12 +572,16 @@ public enum DEFLibraryReader {
             }
             viaName = tokens[i]
             i += 1
+            if i < tokens.count, let orientation = DEFOrientation(rawValue: tokens[i].uppercased()) {
+                viaOrientation = orientation
+                i += 1
+            }
         }
         guard i >= tokens.count || ["+", ";", "NEW"].contains(tokens[i].uppercased()) else {
             throw DEFError.unsupportedRouteFeature(context: "NET \(netName)", feature: tokens[i])
         }
         return (DEFRouteWire(status: status, layerName: layerName, points: points, viaName: viaName,
-                             pointExtensions: extensions), i)
+                             pointExtensions: extensions, viaOrientation: viaOrientation), i)
     }
 
     // MARK: - SPECIALNETS
@@ -687,7 +692,12 @@ public enum DEFLibraryReader {
                                     }
                                     if tokens[i].uppercased() != "NEW" {
                                         let via = tokens[i]; i += 1
-                                        points.append(DEFRoutePoint(viaName: via))
+                                        var orientation: DEFOrientation?
+                                        if i < tokens.count, let value = DEFOrientation(rawValue: tokens[i].uppercased()) {
+                                            orientation = value
+                                            i += 1
+                                        }
+                                        points.append(DEFRoutePoint(viaName: via, viaOrientation: orientation))
                                     }
                                 }
                                 if i < tokens.count, !["+", ";", "NEW"].contains(tokens[i].uppercased()) {

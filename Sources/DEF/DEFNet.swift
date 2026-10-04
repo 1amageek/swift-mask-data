@@ -37,6 +37,7 @@ public struct DEFRouteWire: Hashable, Sendable, Codable {
     /// Per-point extensions in DEF DBU; an empty array means every extension is omitted.
     public var pointExtensions: [Int32?]
     public var viaName: String?
+    public var viaOrientation: DEFOrientation
     public var taper: Bool
     public var style: Int?
 
@@ -50,11 +51,12 @@ public struct DEFRouteWire: Hashable, Sendable, Codable {
 
     public init(status: RouteStatus = .routed, layerName: String,
                 points: [IRPoint] = [], viaName: String? = nil,
-                taper: Bool = false, style: Int? = nil, pointExtensions: [Int32?] = []) {
+                taper: Bool = false, style: Int? = nil, pointExtensions: [Int32?] = [], viaOrientation: DEFOrientation = .n) {
         self.status = status
         self.layerName = layerName
         self.points = points
         self.viaName = viaName
+        self.viaOrientation = viaOrientation
         self.pointExtensions = pointExtensions
         self.taper = taper
         self.style = style

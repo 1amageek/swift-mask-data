@@ -5,6 +5,14 @@ import LayoutIR
 public enum GDSLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
+        // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
+        // Production write calls must reject before serialization until resolved geometry and
+        // the explicit via role can be preserved by the standard encoding.
+        for cell in library.cells {
+            for element in cell.elements {
+                if case .via = element { throw GDSError.unsupportedGeometry(context: "via", reason: "Named via requires a bound master and role-preserving encoding.") }
+            }
+        }
         var w = GDSRecordWriter()
         let scale = library.databaseUnitScale
 
@@ -55,6 +63,8 @@ public enum GDSLibraryWriter {
 
     private static func writeElement(_ w: inout GDSRecordWriter, _ element: IRElement) throws {
         switch element {
+        case .via:
+            throw GDSError.unsupportedGeometry(context: "via", reason: "Named via requires a bound master and role-preserving encoding.")
         case .boundary(let b):
             try writeBoundary(&w, b)
         case .path(let p):

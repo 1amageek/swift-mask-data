@@ -48,8 +48,9 @@ struct DEFRouteGeometryTests {
         let decoded = try DEFLibraryReader.read(DEFLibraryWriter.write(DEFIRConverter.toDEFDocument(lib)))
         #expect(decoded.nets[0].connections == doc.nets[0].connections)
         #expect(decoded.nets[0].routing[0].pointExtensions == [0, 7])
-        #expect(decoded.nets[0].routing[0].viaName == "V12")
-        #expect(decoded.nets[0].routing[1].pointExtensions == [nil, nil])
+        #expect(decoded.nets[0].routing[0].viaName == nil)
+        #expect(decoded.nets[0].routing[1].viaName == "V12")
+        #expect(decoded.nets[0].routing[2].pointExtensions == [nil, nil])
     }
 
     @Test func specialMissingAndZeroExtensionsRemainFlush() throws {

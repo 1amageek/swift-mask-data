@@ -313,7 +313,10 @@ public enum DEFLibraryWriter {
                     line += " ( \(p.x) \(p.y) \(ext) )"
                 } else { line += " ( \(p.x) \(p.y) )" }
             }
-            if let via = wire.viaName { line += " \(via)" }
+            if let via = wire.viaName {
+                line += " \(via)"
+                if wire.viaOrientation != .n { line += " \(wire.viaOrientation.rawValue)" }
+            }
         }
         if !net.properties.isEmpty {
             line += " + PROPERTY"
@@ -342,6 +345,7 @@ public enum DEFLibraryWriter {
             for p in seg.points {
                 if let viaName = p.viaName {
                     line += " \(viaName)"
+                    if let orientation = p.viaOrientation, orientation != .n { line += " \(orientation.rawValue)" }
                 } else {
                     let xStr = p.x.map { String($0) } ?? "*"
                     let yStr = p.y.map { String($0) } ?? "*"
