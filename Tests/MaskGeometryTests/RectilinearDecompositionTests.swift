@@ -102,4 +102,65 @@ struct RectilinearDecompositionTests {
         }
         #expect(checks == 21 && output == nil)
     }
+
+    @Test func relocationIdentityAndReindexPreserveTheSource() throws {
+        let source = try #require(Region(polygons: [rectangle]).rectilinearBands().first)
+        #expect(try source.relocated(toPolygonIndex: 0, coordinateNumerator: 1, coordinateDenominator: 1) == source)
+        let relocated = try source.relocated(toPolygonIndex: .max, coordinateNumerator: 1, coordinateDenominator: 1)
+        #expect(relocated.polygonIndex == .max && source.polygonIndex == 0)
+        #expect(relocated.minX == source.minX && relocated.maxX == source.maxX)
+        #expect(relocated.minY == source.minY && relocated.maxY == source.maxY)
+    }
+
+    @Test func relocationExactNegativeCoordinatesAndRoundtripPreservePositiveArea() throws {
+        let source = try #require(Region(polygons: [polygon([(-4, -6), (4, -6), (4, 6), (-4, 6)])]).rectilinearBands().first)
+        let relocated = try source.relocated(toPolygonIndex: 7, coordinateNumerator: 3, coordinateDenominator: 2)
+        #expect(relocated.polygonIndex == 7 && relocated.minX == -6 && relocated.maxX == 6)
+        #expect(relocated.minY == -9 && relocated.maxY == 9)
+        #expect(relocated.minX < relocated.maxX && relocated.minY < relocated.maxY)
+        #expect(try relocated.relocated(toPolygonIndex: 0, coordinateNumerator: 2, coordinateDenominator: 3) == source)
+        #expect(source.minX == -4 && source.minY == -6 && source.maxX == 4 && source.maxY == 6)
+    }
+
+    @Test(arguments: [-1, 0, 1, 2, 3]) func relocationInvalidParametersFailBeforeArithmetic(parameter: Int) throws {
+        let source = try #require(Region(polygons: [rectangle]).rectilinearBands().first)
+        #expect(throws: RectilinearDecompositionError.invalidRelocationParameters) {
+            try source.relocated(toPolygonIndex: parameter == -1 ? -1 : 0,
+                coordinateNumerator: parameter == 0 ? 0 : parameter == 1 ? -1 : .max,
+                coordinateDenominator: parameter == 2 ? 0 : parameter == 3 ? -1 : 1)
+        }
+    }
+
+    @Test func relocationAcceptsExactInt32AndInt64ProductBoundaries() throws {
+        let source = try #require(Region(polygons: [polygon([(.min, .min), (.max, .min), (.max, .max), (.min, .max)])]).rectilinearBands().first)
+        // Int32.min multiplied by 2^32 reaches Int64.min exactly.
+        #expect(try source.relocated(toPolygonIndex: 0,
+            coordinateNumerator: 4_294_967_296, coordinateDenominator: 4_294_967_296) == source)
+        let unit = try #require(Region(polygons: [polygon([(0, 0), (1, 0), (1, 1), (0, 1)])]).rectilinearBands().first)
+        #expect(try unit.relocated(toPolygonIndex: 0, coordinateNumerator: .max, coordinateDenominator: .max) == unit)
+    }
+
+    @Test(arguments: [false, true]) func relocationRejectsCheckedMultiplyOverflowEvenForIdentityRatio(negative: Bool) throws {
+        let input = negative ? polygon([(.min, 0), (-1, 0), (-1, 1), (.min, 1)]) : rectangle
+        let source = try #require(Region(polygons: [input]).rectilinearBands().first)
+        #expect(throws: RectilinearDecompositionError.relocationCoordinateOverflow) {
+            try source.relocated(toPolygonIndex: 0, coordinateNumerator: .max, coordinateDenominator: .max)
+        }
+    }
+
+    @Test(arguments: [false, true]) func relocationRejectsNonzeroRemaindersWithoutRounding(negative: Bool) throws {
+        let input = negative ? polygon([(-3, -2), (-1, -2), (-1, 0), (-3, 0)]) : polygon([(0, 0), (3, 0), (3, 2), (0, 2)])
+        let source = try #require(Region(polygons: [input]).rectilinearBands().first)
+        #expect(throws: RectilinearDecompositionError.inexactRelocationCoordinate) {
+            try source.relocated(toPolygonIndex: 0, coordinateNumerator: 1, coordinateDenominator: 2)
+        }
+    }
+
+    @Test(arguments: [false, true]) func relocationRejectsInt32ResultRangeFailure(negative: Bool) throws {
+        let input = negative ? polygon([(.min, 0), (-1, 0), (-1, 1), (.min, 1)]) : polygon([(0, 0), (.max, 0), (.max, 1), (0, 1)])
+        let source = try #require(Region(polygons: [input]).rectilinearBands().first)
+        #expect(throws: RectilinearDecompositionError.relocatedCoordinateOutOfRange) {
+            try source.relocated(toPolygonIndex: 0, coordinateNumerator: 2, coordinateDenominator: 1)
+        }
+    }
 }
