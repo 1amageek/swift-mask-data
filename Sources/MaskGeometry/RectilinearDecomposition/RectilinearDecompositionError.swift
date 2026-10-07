@@ -1,9 +1,10 @@
 public enum RectilinearDecompositionError: Error, Equatable, Sendable {
     public enum Resource: Equatable, Sendable {
-        case inputEntries, edgeProbes, outputBands
+        case inputEntries, edgeProbes, intermediateBands, sweepWork, outputBands
     }
 
     case invalidLimits
+    case invalidUnionPolygonIndex
     case invalidRelocationParameters
     case relocationCoordinateOverflow
     case inexactRelocationCoordinate

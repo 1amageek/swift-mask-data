@@ -93,18 +93,35 @@ enum RegionBoolean {
     /// one connected component would fragment differently depending on what
     /// unrelated geometry happens to share the region.
     static func unionBands(_ region: Region) throws -> [Band] {
+        try unionBands(decompose(region), chargeWork: {}, admitRow: {}, checkCancellation: {})
+    }
+
+    /// Shared union traversal; bounded callers admit work and provisional rows.
+    static func unionBands(
+        _ bands: [Band], chargeWork: () throws -> Void,
+        admitRow: () throws -> Void, checkCancellation: () throws -> Void
+    ) throws -> [Band] {
         var rows: [Band] = []
-        try ScanlineSweep.checkedSweepRows(decompose(region), []) { yMin, yMax, intervals, _ in
-            for interval in unionIntervals(intervals) {
+        try ScanlineSweep.checkedSweepRows(bands, [], chargeWork: chargeWork,
+            checkCancellation: checkCancellation) { yMin, yMax, intervals, _ in
+            for interval in try unionIntervals(intervals, chargeInterval: chargeWork,
+                                               checkCancellation: checkCancellation) {
+                try checkCancellation()
+                try admitRow()
                 rows.append(Band(xMin: interval.lo, xMax: interval.hi, yMin: yMin, yMax: yMax))
             }
         }
+        try checkCancellation()
         guard rows.count > 1 else { return rows }
         rows.sort {
             ($0.xMin, $0.xMax, $0.yMin) < ($1.xMin, $1.xMax, $1.yMin)
         }
+        try checkCancellation()
+        try chargeWork()
         var merged: [Band] = [rows[0]]
         for index in 1..<rows.count {
+            try checkCancellation()
+            try chargeWork()
             let current = rows[index]
             let last = merged[merged.count - 1]
             if last.xMin == current.xMin && last.xMax == current.xMax && last.yMax == current.yMin {
@@ -113,6 +130,7 @@ enum RegionBoolean {
                 merged.append(current)
             }
         }
+        try checkCancellation()
         return merged
     }
 
@@ -184,10 +202,22 @@ enum RegionBoolean {
     }
 
     static func unionIntervals(_ intervals: [Interval]) -> [Interval] {
+        unionIntervals(intervals, chargeInterval: {}, checkCancellation: {})
+    }
+
+    private static func unionIntervals(
+        _ intervals: [Interval], chargeInterval: () throws -> Void,
+        checkCancellation: () throws -> Void
+    ) rethrows -> [Interval] {
+        try checkCancellation()
         guard !intervals.isEmpty else { return [] }
         let sorted = intervals.sorted { $0.lo < $1.lo }
+        try checkCancellation()
+        try chargeInterval()
         var result: [Interval] = [sorted[0]]
         for i in 1..<sorted.count {
+            try checkCancellation()
+            try chargeInterval()
             if sorted[i].lo <= result[result.count - 1].hi {
                 result[result.count - 1].hi = max(result[result.count - 1].hi, sorted[i].hi)
             } else {

@@ -25,20 +25,30 @@ enum ScanlineSweep {
     static func checkedSweepRows(
         _ a: [RegionBoolean.Band],
         _ b: [RegionBoolean.Band],
+        chargeWork: () throws -> Void = {},
+        checkCancellation: () throws -> Void = {},
         _ body: (
             _ yMin: Int32,
             _ yMax: Int32,
             _ aIntervals: [RegionBoolean.Interval],
             _ bIntervals: [RegionBoolean.Interval]
-        ) -> Void
+        ) throws -> Void
     ) throws {
-        try validateBands(a, input: "a")
-        try validateBands(b, input: "b")
+        try checkCancellation()
+        try validateBands(a, input: "a", chargeWork: chargeWork, checkCancellation: checkCancellation)
+        try validateBands(b, input: "b", chargeWork: chargeWork, checkCancellation: checkCancellation)
 
         var ys = Set<Int32>()
-        for band in a { ys.insert(band.yMin); ys.insert(band.yMax) }
-        for band in b { ys.insert(band.yMin); ys.insert(band.yMax) }
+        for operand in [a, b] {
+            for band in operand {
+                try checkCancellation()
+                try chargeWork()
+                ys.insert(band.yMin); ys.insert(band.yMax)
+            }
+        }
+        try checkCancellation()
         let sortedYs = ys.sorted()
+        try checkCancellation()
         guard sortedYs.count >= 2 else { return }
 
         var startersAByY: [Int32: [RegionBoolean.Band]] = [:]
@@ -46,32 +56,66 @@ enum ScanlineSweep {
         startersAByY.reserveCapacity(a.count)
         startersBByY.reserveCapacity(b.count)
         for band in a {
+            try checkCancellation()
+            try chargeWork()
             startersAByY[band.yMin, default: []].append(band)
         }
         for band in b {
+            try checkCancellation()
+            try chargeWork()
             startersBByY[band.yMin, default: []].append(band)
         }
 
         var activeA: [RegionBoolean.Band] = []
         var activeB: [RegionBoolean.Band] = []
+        func evict(_ active: inout [RegionBoolean.Band], at y: Int32) throws {
+            var retained = 0
+            for index in active.indices {
+                try checkCancellation()
+                try chargeWork()
+                if active[index].yMax > y {
+                    active[retained] = active[index]
+                    retained += 1
+                }
+            }
+            active.removeLast(active.count - retained)
+        }
+        func insert(_ starters: [RegionBoolean.Band], into active: inout [RegionBoolean.Band]) throws {
+            for band in starters {
+                try checkCancellation()
+                try chargeWork()
+                active.append(band)
+            }
+        }
+        func intervals(_ active: [RegionBoolean.Band]) throws -> [RegionBoolean.Interval] {
+            var result: [RegionBoolean.Interval] = []
+            result.reserveCapacity(active.count)
+            for band in active {
+                try checkCancellation()
+                try chargeWork()
+                result.append(RegionBoolean.Interval(lo: band.xMin, hi: band.xMax))
+            }
+            return result
+        }
         for rowIndex in 0..<(sortedYs.count - 1) {
+            try checkCancellation()
             let yMin = sortedYs[rowIndex]
             let yMax = sortedYs[rowIndex + 1]
-            activeA.removeAll { $0.yMax <= yMin }
-            activeB.removeAll { $0.yMax <= yMin }
-            activeA.append(contentsOf: startersAByY[yMin] ?? [])
-            activeB.append(contentsOf: startersBByY[yMin] ?? [])
-            body(
-                yMin,
-                yMax,
-                activeA.map { RegionBoolean.Interval(lo: $0.xMin, hi: $0.xMax) },
-                activeB.map { RegionBoolean.Interval(lo: $0.xMin, hi: $0.xMax) }
-            )
+            try evict(&activeA, at: yMin)
+            try evict(&activeB, at: yMin)
+            try insert(startersAByY[yMin] ?? [], into: &activeA)
+            try insert(startersBByY[yMin] ?? [], into: &activeB)
+            try body(yMin, yMax, intervals(activeA), intervals(activeB))
         }
+        try checkCancellation()
     }
 
-    private static func validateBands(_ bands: [RegionBoolean.Band], input: String) throws {
+    private static func validateBands(_ bands: [RegionBoolean.Band], input: String,
+        chargeWork: () throws -> Void, checkCancellation: () throws -> Void
+    ) throws {
         for (index, band) in bands.enumerated() {
+            try checkCancellation()
+            try chargeWork()
             guard band.xMin < band.xMax, band.yMin < band.yMax else {
                 throw SweepError.invalidBand(
                     input: input,

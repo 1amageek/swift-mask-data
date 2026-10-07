@@ -18,12 +18,42 @@ extension Region {
         var remainingInput = limits.maximumInputEntries
         var remainingProbes = limits.maximumEdgeProbes
         var output: [RectilinearBand] = []
-        for (polygonIndex, polygon) in polygons.enumerated() {
-            try checkCancellation()
-            guard remainingInput > 0, polygon.points.count <= remainingInput - 1 else {
+        try forEachRectilinearBand(chargeInput: { count in
+            guard count <= remainingInput else {
                 throw RectilinearDecompositionError.limitExceeded(.inputEntries)
             }
-            remainingInput -= polygon.points.count + 1
+            remainingInput -= count
+        }, chargeEdge: {
+            try checkCancellation()
+            guard remainingProbes > 0 else {
+                throw RectilinearDecompositionError.limitExceeded(.edgeProbes)
+            }
+            remainingProbes -= 1
+        }, emitBand: { polygonIndex, band in
+            try checkCancellation()
+            guard output.count < limits.maximumOutputBands else {
+                throw RectilinearDecompositionError.limitExceeded(.outputBands)
+            }
+            output.append(RectilinearBand(polygonIndex: polygonIndex,
+                minX: band.xMin, maxX: band.xMax, minY: band.yMin, maxY: band.yMax))
+        }, checkCancellation: checkCancellation)
+        try checkCancellation()
+        return output
+    }
+
+    /// One admission and decomposition traversal for both public bounded operations.
+    func forEachRectilinearBand(
+        chargeInput: (Int) throws -> Void,
+        chargeEdge: () throws -> Void,
+        emitBand: (Int, RegionBoolean.Band) throws -> Void,
+        checkCancellation: () throws -> Void
+    ) throws {
+        for (polygonIndex, polygon) in polygons.enumerated() {
+            try checkCancellation()
+            guard polygon.points.count < Int.max else {
+                throw RectilinearDecompositionError.limitExceeded(.inputEntries)
+            }
+            try chargeInput(polygon.points.count + 1)
             for index in polygon.points.indices {
                 try checkCancellation()
                 let next = index == polygon.points.count - 1 ? 0 : index + 1
@@ -32,22 +62,9 @@ extension Region {
                     throw RectilinearDecompositionError.unsupportedNonManhattanGeometry(polygonIndex: polygonIndex)
                 }
             }
-            try RegionBoolean.decompose(polygon, chargeEdge: {
-                try checkCancellation()
-                guard remainingProbes > 0 else {
-                    throw RectilinearDecompositionError.limitExceeded(.edgeProbes)
-                }
-                remainingProbes -= 1
-            }, emitBand: { band in
-                try checkCancellation()
-                guard output.count < limits.maximumOutputBands else {
-                    throw RectilinearDecompositionError.limitExceeded(.outputBands)
-                }
-                output.append(RectilinearBand(polygonIndex: polygonIndex,
-                    minX: band.xMin, maxX: band.xMax, minY: band.yMin, maxY: band.yMax))
+            try RegionBoolean.decompose(polygon, chargeEdge: chargeEdge, emitBand: { band in
+                try emitBand(polygonIndex, band)
             }, checkCancellation: checkCancellation)
         }
-        try checkCancellation()
-        return output
     }
 }
