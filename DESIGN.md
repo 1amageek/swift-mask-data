@@ -72,3 +72,18 @@ should not add project/run state or duplicate `DatabaseUnitScale` validation.
 Each codec's test target owns parsing, failure and round-trip behavior. Changes to
 LEF geometry conversion require `LEFTests` and the package integration tests;
 consumers must separately prove their process mapping and qualification gates.
+
+## Public dependency consistency
+
+This candidate retains the complete source and test implementation at public
+`b505ffd739b8fd4b8df9695423e9cdd4469b4f92`. The dependency changes only to public
+CircuiteFoundation `5f132c58209123433e0e479e1ea61096e46061ba`; its Sources and
+Package.swift are byte-identical to the former `ae88104` revision. No current
+`83c9260` source features are adopted. All original products remain unchanged.
+
+MIT publication of swift-mask-data-owned code was explicitly authorized on
+2026-10-19. Dependency licenses/notices and any third-party content keep their
+original authority. This dependency-only candidate does not claim new format,
+foundry or whole-platform qualification. Original LEF/TechIR tests and downstream
+consumer evidence establish only their executed paths. Exact source and execution
+receipts are retained separately from the source archive.
