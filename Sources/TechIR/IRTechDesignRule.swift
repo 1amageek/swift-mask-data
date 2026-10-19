@@ -4,6 +4,7 @@ public struct IRTechDesignRule: Hashable, Sendable, Codable {
     public var minWidth: Double?
     public var minSpacing: Double?
     public var minArea: Double?
+    /// Unconditional minimum empty hole area enclosed by metal, in square microns.
     public var minEnclosedArea: Double?
     public var minDensity: Double?
     public var maxDensity: Double?

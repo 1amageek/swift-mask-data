@@ -97,10 +97,8 @@ struct LEFTechIRConverterTests {
         #expect(m1Rule?.minArea == 0.058)
 
         // Enclosure rules from CUT layers
-        let encRules = lib.enclosureRules
-        #expect(encRules.count == 1)
-        #expect(encRules[0].outerLayerName == "VIA1")
-        #expect(encRules[0].minEnclosure == 0.05)
+        #expect(lib.enclosureRules.isEmpty)
+        #expect(lib.layers[2].enclosures == [.init(overhang1: 0.05, overhang2: 0.08)])
 
         // Vias
         #expect(lib.vias.count == 1)

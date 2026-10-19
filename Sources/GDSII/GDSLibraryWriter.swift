@@ -5,10 +5,17 @@ import LayoutIR
 public enum GDSLibraryWriter {
 
     public static func write(_ library: IRLibrary) throws -> Data {
+        guard library.metadata.isEmpty else {
+            throw GDSError.unsupportedGeometry(context: "library metadata", reason: "GDSII has no generic file-scoped property mapping.")
+        }
         // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
         // Production write calls must reject before serialization until resolved geometry and
         // the explicit via role can be preserved by the standard encoding.
         for cell in library.cells {
+            guard cell.properties.isEmpty else {
+                throw GDSError.unsupportedGeometry(context: "cell properties",
+                    reason: "GDSII has no cell-scoped PROPERTY record for '\(cell.name)'.")
+            }
             for element in cell.elements {
                 if case .via = element { throw GDSError.unsupportedGeometry(context: "via", reason: "Named via requires a bound master and role-preserving encoding.") }
             }

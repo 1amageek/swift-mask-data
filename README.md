@@ -63,17 +63,27 @@ swift test
 The package requires Swift 6.3 or later and macOS 26 or later. See `DESIGN.md`,
 `REQUIREMENTS.md`, and `GOAL_STATUS.md` for implementation-agent guidance.
 
-## Public dependency consistency
+## Public source-floor prerequisite
 
-This candidate retains the complete source and test implementation at public
-`b505ffd739b8fd4b8df9695423e9cdd4469b4f92`. The dependency changes only to public
-CircuiteFoundation `5f132c58209123433e0e479e1ea61096e46061ba`; its Sources and
-Package.swift are byte-identical to the former `ae88104` revision. No current
-`83c9260` source features are adopted. All original products remain unchanged.
+This snapshot preserves the implementation, tests, and resources at
+`83c926044838fe12f579bc9d2526a8e55899fa60`, with the public exact HTTPS
+CircuiteFoundation dependency `5f132c58209123433e0e479e1ea61096e46061ba`.
+It retains the published MIT license for repository-owned code and preserves
+existing source, resource, and third-party notices. The license does not grant
+rights to external model, compiler, or process artifacts.
 
-MIT publication of swift-mask-data-owned code was explicitly authorized on
-2026-10-19. Dependency licenses/notices and any third-party content keep their
-original authority. This dependency-only candidate does not claim new format,
-foundry or whole-platform qualification. Original LEF/TechIR tests and downstream
-consumer evidence establish only their executed paths. Exact source and execution
-receipts are retained separately from the source archive.
+The technology schema retains ordered oxide-scoped antenna statements and
+qualified cut-layer enclosure arrays. Consumers must apply those exact laws or
+refuse them explicitly. The legacy single `enclosure` view returns a value only
+for one unqualified declaration. Legacy JSON migrates to the ordered array;
+conflicting old/new keys are rejected. New source output uses `enclosures`.
+Unsupported conditional enclosure forms and lossy geometry projections remain
+explicit failures; retention is not physical-rule or process qualification.
+See [Technology Enclosure](Sources/TechIR/TechnologyEnclosure/DESIGN.md),
+[Technology Antenna](Sources/TechIR/TechnologyAntenna/DESIGN.md), and
+[LEF Codec](Sources/LEF/Codec/DESIGN.md) for the owning contracts.
+
+Qualification is limited to the original native TechIR, LEF, and DEF tests and
+subsequent consuming Layout admission controls. It does not qualify all mask
+formats, editor/Metal execution, or foundry signoff. No parser implementation,
+test assertion, fixture, or runtime limit is changed by this prerequisite.

@@ -60,5 +60,45 @@ consumers therefore rely on parser admission rather than scanning original text.
 
 ## Verification and Change Impact
 
+### Routed PEX Source Intake
+
+`DEFLibraryReader.readForRoutedPEX` returns `DEFSourceDocument`: the ordinary
+document plus one explicit units declaration, its exact numeric literal and
+zero-based tokenizer range (including `UNITS` through `;`). That range is not a
+byte range. The consuming host binds the whole original artifact and its digest;
+these source facts neither qualify extraction nor authorize a modified document.
+The caller supplies a positive maximum source byte count, checked before decoding
+or token allocation. Tokens and AST storage are bounded by that source size;
+this is not a Foundation heap/RSS byte guarantee. Cancellation is checked during
+tokenization and top-level/net/route traversal and before returning a result.
+All storage is call-local and source buffers do not escape as borrowed pointers.
+
+```text
+Bounded original DEF -> strict codec -> document + declared units/token range
+Original artifact identity ---------> host source binding -> routed PEX admission
+```
+
+This explicit source profile requires exactly one `UNITS DISTANCE MICRONS`
+declaration with a positive integer exactly representable as Double. Omitted
+units are typed unsupported for this profile, not invalid DEF generally. No
+consumer default is inferred: the ordinary reader's historical 1000 differs
+from the pinned OpenROAD v1 omitted-unit behavior of 100. Duplicate, malformed
+or invalid declarations fail. Ordinary `read` and its default remain compatible.
+
+Regular and special net geometry/connectivity clauses must be represented by the
+existing AST and route/pin admission. SUBNET, VPIN, MUSTJOIN, SHIELDNET and other
+unrepresented net clauses fail before a document is returned. Metadata-only
+SOURCE/WEIGHT/ESTCAP/FREQUENCY/XTALK/ORIGINAL single values may be skipped without
+changing geometry or connection inventory; they do not establish timing or
+extraction authority. Existing route extension/via storage and unsupported route
+checks remain authoritative. The strict path never interprets nested unsupported
+clause coordinates as connections. It does not enlarge the underlying DEF grammar.
+
+`Tests/DEFTests/DEFStrictSourceTests.swift` owns explicit units/literal/range,
+missing/duplicate/malformed/domain refusal, exact connections/routes/extensions/
+via orientation, geometry-bearing clause refusals, ordinary compatibility,
+source byte admission and cancellation. Upper routed PEX consumers separately
+validate LEF layer/via/terminal joins and complete extraction coverage.
+
 DEFTests owns orientation semantics and format behavior. Native consumers separately
 prove master, origin, pin, site and via preparation with the same standard transforms.

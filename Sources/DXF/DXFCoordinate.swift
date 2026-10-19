@@ -23,13 +23,14 @@ enum DXFCoordinate {
     }
 
     static func int32(_ value: Double, entity: String) throws -> Int32 {
-        let truncated = value.rounded(.towardZero)
+        let nearest = value.rounded()
+        let converted = abs(value - nearest) <= value.ulp ? nearest : value.rounded(.towardZero)
         guard value.isFinite,
-              truncated >= Double(Int32.min),
-              truncated <= Double(Int32.max) else {
+              converted >= Double(Int32.min),
+              converted <= Double(Int32.max) else {
             throw DXFError.coordinateOutOfRange(entity: entity, value: String(value))
         }
-        return Int32(truncated)
+        return Int32(converted)
     }
 
     static func adding(

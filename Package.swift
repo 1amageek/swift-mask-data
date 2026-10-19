@@ -56,7 +56,7 @@ let package = Package(
                 .product(name: "CircuiteFoundation", package: "CircuiteFoundation"),
             ]
         ),
-        .target(name: "TechIR", exclude: ["DESIGN.md", "TechnologyGrid/DESIGN.md"]),
+        .target(name: "TechIR", exclude: ["DESIGN.md", "TechnologyGrid/DESIGN.md", "TechnologyUnits/DESIGN.md", "TechnologyProperties/DESIGN.md", "TechnologyAntenna/DESIGN.md", "TechnologyEnclosure/DESIGN.md", "TechnologyCurrentDensity/DESIGN.md", "TechnologyViaGeneration/DESIGN.md"]),
         .target(
             name: "LEF",
             dependencies: [

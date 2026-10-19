@@ -69,21 +69,75 @@ should not add project/run state or duplicate `DatabaseUnitScale` validation.
 
 ## Verification and Change Impact
 
+### GDS and DXF preservation boundaries
+
+GDS has element PROPERTY records, not cell-scoped properties. Nonempty
+IRCell.properties fail with GDSError before returning bytes; element property
+attributes, order and values and supported TEXT poses remain preserved.
+CIF and DXF likewise reject cell properties: their current standard profile has
+no cell-property mapping. This does not change their representable geometry,
+hierarchy or existing element-property failure contract.
+Nonempty IRLibrary.metadata is retained by the OASIS named-string profile;
+GDS, CIF, DXF and the LEF OBS projection reject library metadata that their
+existing standard mapping cannot represent. Writer success never erases it.
+
+DXF INSERT maps negative X scale to LayoutIR's reflection-about-X convention
+with an additional half-turn. MINSERT grid offsets rotate by the DXF rotation;
+they do not scale or mirror with block geometry. Reader and writer retain both
+world vector components. Writer computes AREF deltas in Int64 and admits only
+vectors reconstructible from standard column/row spacings at the selected
+rotation. Skew or incompatible vectors fail rather than losing a component.
+Quarter-turn rotation uses exact coordinate permutations. Existing caller-owned
+DXF coordinate truncation is retained for genuine sub-DBU source coordinates.
+Values within one ULP of an integer restore that integer to avoid loss from
+decimal/DBU multiplication noise; larger fractions still truncate toward zero.
+Exact IR array export additionally proves that read-back endpoints are identical.
+These operations use invocation-local value state, with the same Sendable and
+isolation contracts across targets. The
+[Autodesk INSERT reference](https://help.autodesk.com/cloudhelp/2018/ENU/AutoCAD-DXF/files/GUID-28FA4CFB-9D5E-4880-9F11-36C97578252F.htm)
+owns the group codes; the independent
+[ezdxf MINSERT implementation](https://github.com/mozman/ezdxf/blob/master/src/ezdxf/entities/insert.py)
+provides the rotation-only grid oracle.
+
 Each codec's test target owns parsing, failure and round-trip behavior. Changes to
 LEF geometry conversion require `LEFTests` and the package integration tests;
 consumers must separately prove their process mapping and qualification gates.
 
-## Public dependency consistency
+### Foundation revision compatibility
 
-This candidate retains the complete source and test implementation at public
-`b505ffd739b8fd4b8df9695423e9cdd4469b4f92`. The dependency changes only to public
-CircuiteFoundation `5f132c58209123433e0e479e1ea61096e46061ba`; its Sources and
-Package.swift are byte-identical to the former `ae88104` revision. No current
-`83c9260` source features are adopted. All original products remain unchanged.
+The exact `c952ac5ebe3c21bf0cbd6d6ac239130efd732b3a` dependency preserves the
+consumed Core and Foundation conversion sources from
+`ae88104c556f5802819713ed741f5b2fffffc2d9`; its platform-link addition applies
+only to Linux. This package does not consume the changed FileSystem product.
+Production and test sources remain unchanged from `c00511a`.
+Native adoption exercises shared unit-scale admission and coding plus standard
+OASIS writer/reader success and refusal. Prior codec and independent-oracle
+evidence retains its original scope. Exact graph, source hashes and execution
+results belong to the
+[compatibility evidence](../.verification/runs/s3-stageIII-20261013-2e1f3af7/s3m-mask/completion.json);
+this adoption does not establish process or release qualification.
 
-MIT publication of swift-mask-data-owned code was explicitly authorized on
-2026-10-19. Dependency licenses/notices and any third-party content keep their
-original authority. This dependency-only candidate does not claim new format,
-foundry or whole-platform qualification. Original LEF/TechIR tests and downstream
-consumer evidence establish only their executed paths. Exact source and execution
-receipts are retained separately from the source archive.
+## Public source-floor prerequisite
+
+This snapshot preserves the implementation, tests, and resources at
+`83c926044838fe12f579bc9d2526a8e55899fa60`, with the public exact HTTPS
+CircuiteFoundation dependency `5f132c58209123433e0e479e1ea61096e46061ba`.
+It retains the published MIT license for repository-owned code and preserves
+existing source, resource, and third-party notices. The license does not grant
+rights to external model, compiler, or process artifacts.
+
+The technology schema retains ordered oxide-scoped antenna statements and
+qualified cut-layer enclosure arrays. Consumers must apply those exact laws or
+refuse them explicitly. The legacy single `enclosure` view returns a value only
+for one unqualified declaration. Legacy JSON migrates to the ordered array;
+conflicting old/new keys are rejected. New source output uses `enclosures`.
+Unsupported conditional enclosure forms and lossy geometry projections remain
+explicit failures; retention is not physical-rule or process qualification.
+See [Technology Enclosure](Sources/TechIR/TechnologyEnclosure/DESIGN.md),
+[Technology Antenna](Sources/TechIR/TechnologyAntenna/DESIGN.md), and
+[LEF Codec](Sources/LEF/Codec/DESIGN.md) for the owning contracts.
+
+Qualification is limited to the original native TechIR, LEF, and DEF tests and
+subsequent consuming Layout admission controls. It does not qualify all mask
+formats, editor/Metal execution, or foundry signoff. No parser implementation,
+test assertion, fixture, or runtime limit is changed by this prerequisite.

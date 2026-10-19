@@ -1,30 +1,33 @@
 import Foundation
+import TechIR
 
 enum LEFStrictValidator {
     private struct Scope {
         var kind: String
         var endName: String?
-        var spacingTableColumns: Int? = nil
         var statements: Set<String> = []
     }
 
-    private static let supportedStatements: Set<String> = [
+    private static let supportedStatements: Set<String> = Set([
         "VERSION", "BUSBITCHARS", "DIVIDERCHAR", "DATABASE", "TYPE", "DIRECTION",
         "PITCH", "WIDTH", "SPACING", "OFFSET", "RESISTANCE", "CAPACITANCE",
-        "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA", "ENCLOSURE",
+        "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA", "MINENCLOSEDAREA", "ENCLOSURE",
         "SPACINGTABLE", "PARALLELRUNLENGTH", "PROPERTY", "DEFAULTCAP", "MINFEATURE",
         "MANUFACTURINGGRID", "NAMESCASESENSITIVE", "CLEARANCEMEASURE", "USEMINSPACING",
         "CLASS", "SYMMETRY", "SIZE", "ORIGIN", "FOREIGN", "SITE", "FIXEDMASK", "SOURCE",
         "EEQ", "USE", "SHAPE", "ANTENNADIFFAREA", "ANTENNAGATEAREA", "ANTENNAMODEL",
-        "TAPERRULE", "LAYER", "RECT", "POLYGON", "VIA", "CUTSIZE", "CUTSPACING",
+        "TAPERRULE", "LAYER", "RECT", "POLYGON", "PATH", "VIA", "CUTSIZE", "CUTSPACING",
         "ROWCOL", "VIARULE", "MASK", "MINIMUMDENSITY", "MAXIMUMDENSITY",
         "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP"
-    ]
+    ]).union(LEFUnitStatement.all.map(\.command)).union(LEFAntennaCodec.commands).union(LEFCurrentDensityCodec.commands)
+    // FIXME(INCOMPLETE_IMPLEMENTATION): Other layer antenna laws are not retained.
+    // LEFLibraryReader refuses these commands during preflight; typed source/writer/
+    // projection coverage and downstream rule admission are required before support.
     private static let unsupportedStatements: Set<String> = [
-        "PROPERTYDEFINITIONS", "NONDEFAULTRULE", "ANTENNAPARTIALMETALAREA",
+        "NONDEFAULTRULE", "ANTENNAPARTIALMETALAREA",
         "ANTENNAPARTIALMETALSIDEAREA", "ANTENNAPARTIALCUTAREA", "ANTENNAMAXAREACAR",
         "ANTENNAMAXSIDEAREACAR", "ANTENNAMAXCUTCAR", "ANTENNACUMDIFFSIDEAREARATIO",
-        "ANTENNACUMROUTINGAREARATIO", "ANTENNADIFFAREARATIO", "ANTENNADIFFSIDEAREARATIO",
+        "ANTENNACUMROUTINGAREARATIO",
         "ANTENNAAREARATIO", "ANTENNASIDEAREARATIO", "ANTENNAAREAFACTOR",
         "ANTENNACUMAREARATIO", "ANTENNADIFFAREAFACTOR", "MINIMUMCUT"
     ]
@@ -39,24 +42,26 @@ enum LEFStrictValidator {
     ]
     // Match contexts implemented by the reader, so accepted statements cannot be skipped.
     private static let retainedStatementsByScope: [String: Set<String>] = [
-        "LIBRARY": ["VERSION", "BUSBITCHARS", "DIVIDERCHAR", "PROPERTY"],
-        "UNITS": ["DATABASE"],
+        "LIBRARY": ["VERSION", "BUSBITCHARS", "DIVIDERCHAR", "PROPERTY", "MANUFACTURINGGRID", "USEMINSPACING"],
+        "UNITS": Set(["DATABASE"]).union(LEFUnitStatement.all.map(\.command)),
         "LAYER": ["TYPE", "DIRECTION", "PITCH", "WIDTH", "SPACING", "OFFSET", "RESISTANCE",
-                  "CAPACITANCE", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA",
+                  "CAPACITANCE", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA", "MINENCLOSEDAREA",
                   "ENCLOSURE", "SPACINGTABLE", "MINIMUMDENSITY", "MAXIMUMDENSITY",
-                  "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP"],
+                  "DENSITYCHECKWINDOW", "DENSITYCHECKSTEP", "PROPERTY", "ANTENNAMODEL",
+                  "ANTENNADIFFAREARATIO", "ANTENNADIFFSIDEAREARATIO", "DCCURRENTDENSITY", "ACCURRENTDENSITY"],
         "VIA": ["LAYER", "RECT", "POLYGON", "VIARULE", "CUTSIZE", "CUTSPACING", "ENCLOSURE",
                 "ROWCOL", "RESISTANCE"],
         "SITE": ["CLASS", "SYMMETRY", "SIZE"],
         "MACRO": ["CLASS", "SIZE", "SYMMETRY", "ORIGIN", "FOREIGN", "SITE", "EEQ", "SOURCE", "FIXEDMASK", "PROPERTY"],
         "PIN": ["DIRECTION", "USE", "SHAPE", "ANTENNADIFFAREA", "ANTENNAGATEAREA", "ANTENNAMODEL", "TAPERRULE", "PROPERTY"],
-        "PORT": ["CLASS", "LAYER", "RECT", "POLYGON", "VIA"],
-        "OBS": ["LAYER", "RECT", "POLYGON"]
+        "PORT": ["CLASS", "LAYER", "WIDTH", "RECT", "POLYGON", "PATH", "VIA"],
+        "OBS": ["LAYER", "WIDTH", "RECT", "POLYGON", "PATH"]
     ]
 
     static func validate(_ tokens: [String]) throws {
         var scopes: [Scope] = []
         var index = 0
+        var sawLayer = false
         var libraryEnded = false
         var libraryStatements: Set<String> = []
 
@@ -88,7 +93,21 @@ enum LEFStrictValidator {
                 continue
             }
 
+            if command == "VIARULE", scopes.isEmpty {
+                index = try LEFViaGenerationCodec.read(tokens, from: index).next
+                continue
+            }
+            if command == "PROPERTYDEFINITIONS" {
+                guard scopes.isEmpty, libraryStatements.insert(command).inserted else {
+                    throw LEFError.invalidStructure("PROPERTYDEFINITIONS requires one library block")
+                }
+                index = try LEFPropertyDefinitionCodec.read(tokens, from: index + 1).next
+                continue
+            }
+
             if let opening = try openingScope(command: command, tokens: tokens, index: index, scopes: scopes) {
+                if command == "LAYER", scopes.isEmpty { sawLayer = true }
+                if command == "UNITS", sawLayer { throw LEFError.invalidStructure("UNITS must precede LAYER declarations") }
                 if command == "UNITS", !libraryStatements.insert(command).inserted {
                     throw LEFError.unsupportedCommand("repeated UNITS")
                 }
@@ -107,8 +126,42 @@ enum LEFStrictValidator {
             guard retainedStatementsByScope[scopeKind]?.contains(command) == true else {
                 throw LEFError.unsupportedCommand("\(command) in \(scopeKind)")
             }
+            if scopeKind == "LAYER", LEFCurrentDensityCodec.commands.contains(command) {
+                let parsed = try LEFCurrentDensityCodec.read(tokens, from: index)
+                guard let scopeIndex = scopes.indices.last,
+                      scopes[scopeIndex].statements.insert("CURRENTDENSITY:" + parsed.kind.rawValue).inserted else {
+                    throw LEFError.unsupportedCommand("repeated \(command) \(parsed.kind.rawValue) in LAYER")
+                }
+                index = parsed.next
+                continue
+            }
+            if scopeKind == "LAYER", command == "MINENCLOSEDAREA" {
+                let parsed = try LEFMinimumEnclosedAreaCodec.read(tokens, from: index)
+                guard let scopeIndex = scopes.indices.last,
+                      scopes[scopeIndex].statements.insert(command).inserted else {
+                    throw LEFError.unsupportedCommand("repeated MINENCLOSEDAREA in LAYER")
+                }
+                index = parsed.next
+                continue
+            }
+            if scopeKind == "LAYER", command == "ENCLOSURE" {
+                index = try LEFLayerEnclosureCodec.read(tokens, from: index).next
+                continue
+            }
+            if scopeKind == "LAYER", LEFAntennaCodec.commands.contains(command) {
+                index = try LEFAntennaCodec.read(tokens, from: index).next
+                continue
+            }
             if densityCommands.contains(command), scopes.last?.kind != "LAYER" {
                 throw LEFError.invalidStructure("\(command) is only valid inside a LAYER")
+            }
+
+            if command == "SPACINGTABLE", let scopeIndex = scopes.indices.last {
+                guard scopes[scopeIndex].statements.insert(command).inserted else {
+                    throw LEFError.unsupportedCommand("repeated SPACINGTABLE in LAYER")
+                }
+                index = try LEFSpacingTableValidation.endIndex(in: tokens, from: index + 1)
+                continue
             }
 
             guard let semicolon = tokens[(index + 1)...].firstIndex(of: ";") else {
@@ -118,12 +171,10 @@ enum LEFStrictValidator {
             if values.contains(where: { $0.uppercased() == "END" }) {
                 throw LEFError.missingSemicolon(command: command)
             }
-            let tableColumns = scopes.last?.spacingTableColumns
-            try validateValues(command: command, values: values, spacingTableColumns: tableColumns, scopeKind: scopeKind)
+            try validateValues(command: command, values: values, scopeKind: scopeKind)
             let repeatedGeometry = ["VIA", "PORT", "OBS"].contains(scopeKind)
-                && ["LAYER", "RECT", "POLYGON", "VIA"].contains(command)
-            let repeatedTableRow = command == "WIDTH" && tableColumns != nil
-            if command != "PROPERTY", !repeatedGeometry, !repeatedTableRow {
+                && ["LAYER", "WIDTH", "RECT", "POLYGON", "PATH", "VIA"].contains(command)
+            if command != "PROPERTY", !repeatedGeometry {
                 let inserted: Bool
                 if let scopeIndex = scopes.indices.last {
                     inserted = scopes[scopeIndex].statements.insert(command).inserted
@@ -131,13 +182,6 @@ enum LEFStrictValidator {
                     inserted = libraryStatements.insert(command).inserted
                 }
                 guard inserted else { throw LEFError.unsupportedCommand("repeated \(command) in \(scopeKind)") }
-            }
-            if let scopeIndex = scopes.indices.last, scopes[scopeIndex].kind == "LAYER" {
-                if command == "SPACINGTABLE" {
-                    scopes[scopeIndex].spacingTableColumns = values.count - 1
-                } else if command != "WIDTH" {
-                    scopes[scopeIndex].spacingTableColumns = nil
-                }
             }
             index = semicolon + 1
         }
@@ -150,7 +194,26 @@ enum LEFStrictValidator {
         }
     }
 
+    static func validate(_ declarations: IRTechUnitDeclarations) throws {
+        for statement in LEFUnitStatement.all {
+            if let value = declarations[keyPath: statement.keyPath], !value.isFinite || value <= 0 {
+                throw LEFError.invalidNumber(command: statement.command, value: String(value))
+            }
+        }
+    }
+
     static func validate(_ layer: LEFLayerDef) throws {
+        try LEFAntennaCodec.validate(layer.antennaStatements, layerType: layer.type)
+        try LEFLayerEnclosureCodec.validate(layer.enclosures, layerType: layer.type)
+        try LEFLayerResistanceCodec.validate(layer)
+        try LEFCurrentDensityCodec.validate(layer)
+        try LEFMinimumEnclosedAreaCodec.validate(layer)
+        if let table = layer.spacingTable {
+            guard layer.spacing == nil else {
+                throw LEFError.invalidStructure("Unqualified SPACING cannot coexist with SPACINGTABLE")
+            }
+            try LEFSpacingTableValidation.validate(table)
+        }
         for (command, value) in [("PITCH", layer.pitch), ("OFFSET", layer.offset)] {
             if let value, !value.x.isFinite || !value.y.isFinite {
                 throw LEFError.invalidNumber(command: command, value: "non-finite")
@@ -221,12 +284,20 @@ enum LEFStrictValidator {
     private static func validateValues(
         command: String,
         values: [String],
-        spacingTableColumns: Int?,
         scopeKind: String
     ) throws {
         guard !values.isEmpty || command == "FIXEDMASK" else {
             throw LEFError.missingValue(command: command)
         }
+        if scopeKind == "UNITS", command != "DATABASE" {
+            guard let statement = LEFUnitStatement.all.first(where: { $0.command == command }),
+                  values.count == 2, values[0].uppercased() == statement.unit else {
+                throw LEFError.invalidStructure("Invalid unit name or arity for \(command)")
+            }
+            try requirePositiveNumbers([values[1]], command: command)
+            return
+        }
+
         switch command {
         case "VERSION":
             guard values.count == 1 else { throw LEFError.missingValue(command: command) }
@@ -241,11 +312,17 @@ enum LEFStrictValidator {
             guard values.count == 1, allowed.contains(values[0].uppercased()) else {
                 throw LEFError.invalidStructure("unsupported DIRECTION value \(values.first ?? "")")
             }
+        case "USEMINSPACING":
+            guard values.count == 2, values[0].uppercased() == "OBS", ["ON", "OFF"].contains(values[1].uppercased()) else {
+                throw LEFError.invalidStructure("USEMINSPACING requires OBS ON or OBS OFF")
+            }
         case "DATABASE":
             guard values.count == 2, values[0].uppercased() == "MICRONS" else {
                 throw LEFError.missingValue(command: command)
             }
             try requirePositiveNumbers([values[1]], command: command)
+            guard let database = Double(values[1]) else { throw LEFError.invalidNumber(command: command, value: values[1]) }
+            try LEFUnitStatement.validateDatabase(database)
         case "SIZE":
             guard values.count == 3, values[1].uppercased() == "BY" else {
                 throw LEFError.missingValue(command: command)
@@ -256,23 +333,20 @@ enum LEFStrictValidator {
                 throw LEFError.invalidStructure("\(command) requires one scalar or two axis values")
             }
             try requireNumbers(values, command: command)
-        case "SPACINGTABLE":
-            guard values.first?.uppercased() == "PARALLELRUNLENGTH", values.count >= 2 else {
-                throw LEFError.unsupportedCommand("SPACINGTABLE without PARALLELRUNLENGTH")
-            }
-            try requireNumbers(Array(values.dropFirst()), command: command)
         case "WIDTH":
-            let expectedCount = spacingTableColumns.map { $0 + 1 } ?? 1
-            guard values.count == expectedCount else {
-                throw LEFError.invalidStructure("WIDTH requires \(expectedCount) values in its current context")
+            guard values.count == 1 else {
+                throw LEFError.invalidStructure("WIDTH requires one value outside a spacing table")
             }
             try requireNumbers(values, command: command)
-        case "SPACING", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA",
+        case "SPACING", "EDGECAPACITANCE", "THICKNESS", "MINWIDTH", "MAXWIDTH", "AREA", "MINENCLOSEDAREA",
              "ANTENNADIFFAREA", "ANTENNAGATEAREA", "MANUFACTURINGGRID":
             guard values.count == 1 else {
                 throw LEFError.invalidStructure("\(command) requires one supported scalar value")
             }
             try requireNumbers(values, command: command)
+            if command == "MANUFACTURINGGRID" {
+                try requirePositiveNumbers(values, command: command)
+            }
         case "ORIGIN", "CUTSIZE", "CUTSPACING":
             guard values.count == 2 else { throw LEFError.missingValue(command: command) }
             try requireNumbers(values, command: command)
@@ -304,6 +378,11 @@ enum LEFStrictValidator {
                 throw LEFError.missingValue(command: command)
             }
             try requireNumbers(coordinates, command: command)
+        case "PATH":
+            guard values.count >= 2, values.count.isMultiple(of: 2) else {
+                throw LEFError.missingValue(command: command)
+            }
+            try requireNumbers(values, command: command)
         case "ENCLOSURE":
             guard values.count == (scopeKind == "VIA" ? 4 : 2) else { throw LEFError.missingValue(command: command) }
             try requireNumbers(values, command: command)
@@ -312,6 +391,10 @@ enum LEFStrictValidator {
                 throw LEFError.invalidNumber(command: command, value: values.first ?? "")
             }
         case "RESISTANCE", "CAPACITANCE":
+            if command == "RESISTANCE", scopeKind == "LAYER" {
+                try LEFLayerResistanceCodec.validateValues(values)
+                return
+            }
             let prefix = command == "RESISTANCE" ? "RPERSQ" : "CPERSQDIST"
             guard (scopeKind == "VIA" && values.count == 1) ||
                   (scopeKind == "LAYER" && values.count == 2 && values[0].uppercased() == prefix),

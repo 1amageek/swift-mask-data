@@ -6,24 +6,27 @@ public enum LEFTechIRConverter {
     // MARK: - LEFDocument → IRTechLibrary
 
     public static func toIRTechLibrary(_ doc: LEFDocument) throws -> IRTechLibrary {
+        if let grid = doc.manufacturingGrid, !grid.isFinite || grid <= 0 {
+            throw LEFError.invalidGeometry("MANUFACTURINGGRID requires a finite positive value")
+        }
+        try LEFViaGenerationCodec.validate(doc.viaGenerationRules, layers: doc.layers)
+        try LEFStrictValidator.validate(doc.unitDeclarations)
+        try LEFPropertyDefinitionCodec.validate(doc.propertyDefinitions)
         var layers: [IRTechLayerDef] = []
         var designRules: [IRTechDesignRule] = []
-        var enclosureRules: [IRTechEnclosureRule] = []
 
         for lefLayer in doc.layers {
+            try LEFAntennaCodec.validate(lefLayer.antennaStatements, layerType: lefLayer.type)
+            try LEFLayerEnclosureCodec.validate(lefLayer.enclosures, layerType: lefLayer.type)
+            try LEFLayerResistanceCodec.validate(lefLayer)
+            try LEFCurrentDensityCodec.validate(lefLayer)
+            try LEFMinimumEnclosedAreaCodec.validate(lefLayer)
+            try LEFLayerPropertyCodec.validate(lefLayer, definitions: doc.propertyDefinitions)
             layers.append(try convertLayer(lefLayer))
 
             let rule = extractDesignRule(from: lefLayer)
-            if rule.minWidth != nil || rule.minSpacing != nil || rule.minArea != nil {
+            if rule.minWidth != nil || rule.minSpacing != nil || rule.minArea != nil || rule.minEnclosedArea != nil {
                 designRules.append(rule)
-            }
-
-            if let enc = lefLayer.enclosure, lefLayer.type == .cut {
-                enclosureRules.append(IRTechEnclosureRule(
-                    outerLayerName: lefLayer.name,
-                    innerLayerName: lefLayer.name,
-                    minEnclosure: min(enc.overhang1, enc.overhang2)
-                ))
             }
         }
 
@@ -37,8 +40,13 @@ public enum LEFTechIRConverter {
             vias: vias,
             sites: sites,
             designRules: designRules,
-            enclosureRules: enclosureRules,
-            metadata: ["lef.version": doc.version]
+            metadata: ["lef.version": doc.version],
+            manufacturingGrid: doc.manufacturingGrid,
+            unitDeclarations: doc.unitDeclarations,
+            hasDatabaseUnitsDeclaration: doc.hasDatabaseUnitsDeclaration,
+            propertyDefinitions: doc.propertyDefinitions,
+            obstructionSpacingUsesMinimumWidth: doc.obstructionSpacingUsesMinimumWidth,
+            viaGenerationRules: doc.viaGenerationRules
         )
     }
 
@@ -54,7 +62,13 @@ public enum LEFTechIRConverter {
             dbuPerMicron: lib.dbuPerMicron,
             layers: layers,
             vias: vias,
-            sites: sites
+            sites: sites,
+            manufacturingGrid: lib.manufacturingGrid,
+            unitDeclarations: lib.unitDeclarations,
+            hasDatabaseUnitsDeclaration: lib.hasDatabaseUnitsDeclaration,
+            propertyDefinitions: lib.propertyDefinitions,
+            obstructionSpacingUsesMinimumWidth: lib.obstructionSpacingUsesMinimumWidth,
+            viaGenerationRules: lib.viaGenerationRules
         )
     }
 
@@ -85,7 +99,13 @@ public enum LEFTechIRConverter {
             capacitance: lef.capacitance,
             thickness: lef.thickness,
             spacingTable: spacingTable,
-            minArea: lef.area
+            minArea: lef.area,
+            properties: lef.properties,
+            subtype: lef.subtype,
+            antennaStatements: lef.antennaStatements,
+            enclosures: lef.enclosures,
+            cutResistanceOhms: lef.cutResistanceOhms,
+            currentDensityLimits: lef.currentDensityLimits
         )
     }
 
@@ -94,7 +114,8 @@ public enum LEFTechIRConverter {
             layerName: lef.name,
             minWidth: lef.minwidth ?? lef.width,
             minSpacing: lef.spacing,
-            minArea: lef.area
+            minArea: lef.area,
+            minEnclosedArea: lef.minimumEnclosedAreas.first
         )
     }
 
@@ -147,7 +168,14 @@ public enum LEFTechIRConverter {
             capacitance: ir.capacitance,
             thickness: ir.thickness,
             minwidth: rule?.minWidth,
-            area: ir.minArea ?? rule?.minArea
+            area: ir.minArea ?? rule?.minArea,
+            properties: ir.properties,
+            subtype: ir.subtype,
+            antennaStatements: ir.antennaStatements,
+            enclosures: ir.enclosures,
+            cutResistanceOhms: ir.cutResistanceOhms,
+            currentDensityLimits: ir.currentDensityLimits,
+            minimumEnclosedAreas: rules.compactMap { $0.layerName == ir.name ? $0.minEnclosedArea : nil }
         )
     }
 

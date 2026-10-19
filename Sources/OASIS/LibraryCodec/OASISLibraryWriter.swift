@@ -56,6 +56,10 @@ public enum OASISLibraryWriter {
         // Offset tables follow in END.
         w.writeUnsignedInteger(1)
 
+        for (name, value) in library.metadata.sorted(by: { $0.key < $1.key }) {
+            try writeNamedProperty(&w, name: name, value: value)
+        }
+
         // Store library name as PROPSTRING (record type 9) for round-trip
         w.writeByte(OASISRecordType.propstring.rawValue)
         try w.writeAString(library.name)
@@ -84,6 +88,7 @@ public enum OASISLibraryWriter {
             try w.writeAString(cell.name)
         }
 
+        try writeProperties(&w, cell.properties, cellScope: true)
         for element in cell.elements {
             try writeElement(&w, element, cellNameTable: cellNameTable)
         }
@@ -245,6 +250,10 @@ public enum OASISLibraryWriter {
     }
 
     private static func writeText(_ w: inout OASISWriter, _ t: IRText) throws {
+        guard t.transform == .identity else {
+            throw OASISError.unsupportedGeometry(context: "text transform",
+                reason: "OASIS TEXT has no standard rotation, magnification or reflection fields.")
+        }
         // TEXT (record type 19)
         w.writeByte(OASISRecordType.text.rawValue)
         // info-byte: C X Y R T L
@@ -472,23 +481,35 @@ public enum OASISLibraryWriter {
     }
 
     /// Write PROPERTY records for an element's IR properties.
-    private static func writeProperties(_ w: inout OASISWriter, _ properties: [IRProperty]) throws {
+    private static func writeProperties(_ w: inout OASISWriter, _ properties: [IRProperty], cellScope: Bool = false) throws {
         for prop in properties {
-            w.writeByte(OASISRecordType.property.rawValue)
-            // info-byte: UUUU(7:4)=0001, V(3)=0, C(2)=1, T(1)=0 (inline name), S(0)=0
-            let infoByte: UInt8 = (1 << 4) | 0x04  // = 0x14
-            w.writeByte(infoByte)
-
-            // Parse "key=value" format from IRProperty
-            let parts = prop.value.split(separator: "=", maxSplits: 1)
-            let name = parts.count > 0 ? String(parts[0]) : "attr_\(prop.attribute)"
-            let value = parts.count > 1 ? String(parts[1]) : prop.value
-
-            try w.writeAString(name)       // inline property name
-            // Write one standard a-string property value (type 10).
-            w.writeUnsignedInteger(10)  // property value type = a-string
-            try w.writeAString(value)
+            if prop.attribute > 0, !cellScope {
+                w.writeByte(OASISRecordType.property.rawValue)
+                w.writeByte(0x25) // Two values, inline standard property name.
+                try w.writeAString("S_GDS_PROPERTY")
+                try w.writePropertyValue(.unsignedInteger(UInt64(prop.attribute)))
+                try w.writePropertyValue(.bString(Array(prop.value.utf8)))
+                continue
+            }
+            guard prop.attribute == 0, let separator = prop.value.firstIndex(of: "="),
+                  separator != prop.value.startIndex else {
+                throw OASISError.unsupportedGeometry(context: "property",
+                    reason: "Named properties require attribute zero and a nonempty name=value; numeric attributes belong to elements.")
+            }
+            let name = String(prop.value[..<separator])
+            let value = String(prop.value[prop.value.index(after: separator)...])
+            try writeNamedProperty(&w, name: name, value: value)
         }
+    }
+
+    private static func writeNamedProperty(_ w: inout OASISWriter, name: String, value: String) throws {
+        guard !name.isEmpty, name != "S_GDS_PROPERTY" else {
+            throw OASISError.unsupportedGeometry(context: "property", reason: "Expected a nonempty generic property name.")
+        }
+        w.writeByte(OASISRecordType.property.rawValue)
+        w.writeByte(0x14) // One value, inline name, generic property.
+        try w.writeAString(name)
+        try w.writePropertyValue(.aString(value))
     }
 
     /// Every exported path defines both endpoints independently of prior records.

@@ -46,6 +46,9 @@ public enum OASISLibraryReader {
         var propStrings: [String] = []
         var cells: [IRCell] = []
         var libraryName = ""
+        var metadata: [String: String] = [:]
+        var libraryPropertyModal = OASISModalState()
+        var acceptsLibraryProperties = true
 
         while reader.hasMore {
             let recordByte = try reader.readByte()
@@ -54,6 +57,9 @@ public enum OASISLibraryReader {
                 throw OASISError.unknownRecordType(offset: reader.currentOffset - 1, rawValue: recordByte)
             }
 
+            if recordType != .pad, recordType != .cblock, recordType != .property, recordType != .propertyRepeat {
+                acceptsLibraryProperties = false
+            }
             switch recordType {
             case .pad:
                 continue
@@ -71,7 +77,19 @@ public enum OASISLibraryReader {
                     throw OASISError.invalidEnvelope(offset: endOffset, reason: "END must be the final 256-byte record.")
                 }
                 let name = libraryName.isEmpty ? (cellNames.first ?? "OASIS") : libraryName
-                return IRLibrary(name: name, databaseUnitScale: scale, cells: cells)
+                return IRLibrary(name: name, databaseUnitScale: scale, cells: cells, metadata: metadata)
+            case .property:
+                guard acceptsLibraryProperties, try reader.peekByte() & 1 == 0 else {
+                    throw OASISError.unsupportedGeometry(context: "library property", reason: "Only generic file-scoped string properties before tables are supported.")
+                }
+                _ = try readProperty(&reader, modal: &libraryPropertyModal, propNames: propNames)
+                try appendLibraryMetadata(from: libraryPropertyModal, to: &metadata)
+            case .propertyRepeat:
+                guard acceptsLibraryProperties else {
+                    throw OASISError.unsupportedGeometry(context: "library property", reason: "Table-scoped properties have no retained owner.")
+                }
+                _ = try repeatedProperty(libraryPropertyModal)
+                try appendLibraryMetadata(from: libraryPropertyModal, to: &metadata)
             case .propstring:
                 let name = try reader.readAString()
                 propStrings.append(name)
@@ -134,6 +152,17 @@ public enum OASISLibraryReader {
         throw OASISError.invalidEnvelope(offset: reader.currentOffset, reason: "Missing END record.")
     }
 
+    private static func appendLibraryMetadata(from modal: OASISModalState, to metadata: inout [String: String]) throws {
+        guard let name = modal.lastPropertyName, !name.isEmpty,
+              let values = modal.lastPropertyValues, values.count == 1, case .aString(let value) = values[0] else {
+            throw OASISError.unsupportedGeometry(context: "library metadata", reason: "File metadata requires one named string value.")
+        }
+        guard metadata[name] == nil else {
+            throw OASISError.unsupportedGeometry(context: "library metadata", reason: "Duplicate file property names cannot be represented in the metadata map.")
+        }
+        metadata[name] = value
+    }
+
     // MARK: - Cell Contents
 
     private static func readCellContents(
@@ -144,6 +173,8 @@ public enum OASISLibraryReader {
         propNames: [String]
     ) throws -> IRCell {
         var elements: [IRElement] = []
+        var properties: [IRProperty] = []
+        var propertyTarget: Range<Int>?
         var modal = OASISModalState()
 
         while reader.hasMore {
@@ -154,7 +185,7 @@ public enum OASISLibraryReader {
 
             switch nextType {
             case .cell, .cellRef, .cellname, .cellnameRef, .end:
-                return IRCell(name: name, elements: elements)
+                return IRCell(name: name, elements: elements, properties: properties)
             case .xyAbsolute:
                 _ = try reader.readByte()
                 modal.relativeCoordinates = false
@@ -163,7 +194,7 @@ public enum OASISLibraryReader {
                 modal.relativeCoordinates = true
             case .rectangle:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readRectangle(&reader, modal: &modal),
                     reader: &reader,
                     modal: &modal,
@@ -172,7 +203,7 @@ public enum OASISLibraryReader {
                 )
             case .polygon:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readPolygon(&reader, modal: &modal),
                     reader: &reader,
                     modal: &modal,
@@ -181,7 +212,7 @@ public enum OASISLibraryReader {
                 )
             case .path:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readPath(&reader, modal: &modal),
                     reader: &reader,
                     modal: &modal,
@@ -190,7 +221,7 @@ public enum OASISLibraryReader {
                 )
             case .text:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readText(&reader, modal: &modal, textStrings: textStrings),
                     reader: &reader,
                     modal: &modal,
@@ -200,14 +231,14 @@ public enum OASISLibraryReader {
             case .placement:
                 _ = try reader.readByte()
                 let placed = try readPlacement(&reader, modal: &modal, withTransform: false, cellNames: cellNames)
-                try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
+                propertyTarget = try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
             case .placementT:
                 _ = try reader.readByte()
                 let placed = try readPlacement(&reader, modal: &modal, withTransform: true, cellNames: cellNames)
-                try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
+                propertyTarget = try appendElements(placed, reader: &reader, modal: &modal, elements: &elements, propNames: propNames)
             case .trapezoid:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readTrapezoid(&reader, modal: &modal, variant: .both),
                     reader: &reader,
                     modal: &modal,
@@ -216,7 +247,7 @@ public enum OASISLibraryReader {
                 )
             case .trapezoidA:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readTrapezoid(&reader, modal: &modal, variant: .a),
                     reader: &reader,
                     modal: &modal,
@@ -225,7 +256,7 @@ public enum OASISLibraryReader {
                 )
             case .trapezoidB:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readTrapezoid(&reader, modal: &modal, variant: .b),
                     reader: &reader,
                     modal: &modal,
@@ -234,7 +265,7 @@ public enum OASISLibraryReader {
                 )
             case .ctrapezoid:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readCTrapezoid(&reader, modal: &modal),
                     reader: &reader,
                     modal: &modal,
@@ -243,7 +274,7 @@ public enum OASISLibraryReader {
                 )
             case .circle:
                 _ = try reader.readByte()
-                try appendElements(
+                propertyTarget = try appendElements(
                     try readCircle(&reader, modal: &modal),
                     reader: &reader,
                     modal: &modal,
@@ -253,12 +284,19 @@ public enum OASISLibraryReader {
             case .property:
                 _ = try reader.readByte()
                 let property = try readProperty(&reader, modal: &modal, propNames: propNames)
-                if !elements.isEmpty {
-                    attachProperty(&elements[elements.count - 1], property)
+                if let target = propertyTarget {
+                    for index in target { attachProperty(&elements[index], property) }
+                } else {
+                    properties.append(property)
                 }
             case .propertyRepeat:
                 _ = try reader.readByte()
-                try applyPropertyRepeat(modal: &modal, elements: &elements)
+                let property = try repeatedProperty(modal)
+                if let target = propertyTarget {
+                    for index in target { attachProperty(&elements[index], property) }
+                } else {
+                    properties.append(property)
+                }
             case .cblock:
                 _ = try reader.readByte()
                 try reader.handleCBlock()
@@ -273,7 +311,7 @@ public enum OASISLibraryReader {
             }
         }
 
-        return IRCell(name: name, elements: elements)
+        return IRCell(name: name, elements: elements, properties: properties)
     }
 
     private static func appendElements(
@@ -282,7 +320,7 @@ public enum OASISLibraryReader {
         modal: inout OASISModalState,
         elements: inout [IRElement],
         propNames: [String]
-    ) throws {
+    ) throws -> Range<Int> {
         let start = elements.count
         elements.append(contentsOf: newElements)
         try readTrailingProperties(
@@ -292,6 +330,7 @@ public enum OASISLibraryReader {
             range: start..<elements.count,
             propNames: propNames
         )
+        return start..<elements.count
     }
 
     // MARK: - RECTANGLE
@@ -899,12 +938,11 @@ public enum OASISLibraryReader {
         return try oasisPropertyToIR(name: propName, values: values)
     }
 
-    private static func applyPropertyRepeat(modal: inout OASISModalState, elements: inout [IRElement]) throws {
-        guard let name = modal.lastPropertyName, let values = modal.lastPropertyValues else { return }
-        let irProp = try oasisPropertyToIR(name: name, values: values)
-        if !elements.isEmpty {
-            attachProperty(&elements[elements.count - 1], irProp)
+    private static func repeatedProperty(_ modal: OASISModalState) throws -> IRProperty {
+        guard let name = modal.lastPropertyName, let values = modal.lastPropertyValues else {
+            throw OASISError.undefinedModal(context: "PROPERTY_REPEAT")
         }
+        return try oasisPropertyToIR(name: name, values: values)
     }
 
     private static func readTrailingProperties(
@@ -927,8 +965,7 @@ public enum OASISLibraryReader {
                 }
             case .propertyRepeat:
                 _ = try reader.readByte()
-                guard let name = modal.lastPropertyName, let values = modal.lastPropertyValues else { break }
-                let irProp = try oasisPropertyToIR(name: name, values: values)
+                let irProp = try repeatedProperty(modal)
                 for index in range {
                     attachProperty(&elements[index], irProp)
                 }
@@ -939,6 +976,24 @@ public enum OASISLibraryReader {
     }
 
     private static func oasisPropertyToIR(name: String, values: [OASISPropertyValue]) throws -> IRProperty {
+        if name == "S_GDS_PROPERTY" {
+            guard values.count == 2, case .unsignedInteger(let number) = values[0],
+                  number > 0, number <= UInt64(Int16.max) else {
+                throw OASISError.unsupportedGeometry(context: "S_GDS_PROPERTY", reason: "Expected a positive Int16 attribute and string value.")
+            }
+            let value: String
+            switch values[1] {
+            case .aString(let string): value = string
+            case .bString(let bytes):
+                guard let string = String(bytes: bytes, encoding: .utf8) else {
+                    throw OASISError.unsupportedGeometry(context: "S_GDS_PROPERTY", reason: "Binary property value is not representable as a UTF-8 string.")
+                }
+                value = string
+            default:
+                throw OASISError.unsupportedGeometry(context: "S_GDS_PROPERTY", reason: "Expected a string property value.")
+            }
+            return IRProperty(attribute: Int16(number), value: value)
+        }
         // FIXME(INCOMPLETE_IMPLEMENTATION): Property-string table references are unresolved.
         // PATH and other library records reach this conversion; referenced bytes must be resolved
         // with their string kind before an imported library can report success.

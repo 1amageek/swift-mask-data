@@ -11,7 +11,7 @@ public enum LEFLibraryReader {
 
         let tokens = try LEFTokenizer.tokenize(text)
         try LEFStrictValidator.validate(tokens)
-        var doc = LEFDocument()
+        var doc = LEFDocument(dbuPerMicron: 100, hasDatabaseUnitsDeclaration: false)
         var i = 0
 
         while i < tokens.count {
@@ -42,11 +42,11 @@ public enum LEFLibraryReader {
 
             case "UNITS":
                 i += 1
-                i = parseUnits(tokens, from: i, doc: &doc)
+                i = try parseUnits(tokens, from: i, doc: &doc)
 
             case "LAYER":
                 i += 1
-                let (layer, next) = try parseLayer(tokens, from: i)
+                let (layer, next) = try parseLayer(tokens, from: i, definitions: doc.propertyDefinitions)
                 if let layer = layer {
                     try LEFStrictValidator.validate(layer)
                     doc.layers.append(layer)
@@ -60,8 +60,9 @@ public enum LEFLibraryReader {
                 i = next
 
             case "VIARULE":
-                i += 1
-                i = skipToEnd(tokens, from: i)
+                let parsed = try LEFViaGenerationCodec.read(tokens, from: i)
+                doc.viaGenerationRules.append(parsed.rule)
+                i = parsed.next
 
             case "SITE":
                 i += 1
@@ -71,7 +72,7 @@ public enum LEFLibraryReader {
 
             case "MACRO":
                 i += 1
-                let (macro, next) = parseMacro(tokens, from: i)
+                let (macro, next) = try parseMacro(tokens, from: i)
                 if let macro = macro { doc.macros.append(macro) }
                 i = next
 
@@ -81,9 +82,21 @@ public enum LEFLibraryReader {
                 if let prop = prop { doc.properties.append(prop) }
                 i = next
 
+            case "MANUFACTURINGGRID":
+                doc.manufacturingGrid = Double(tokens[i + 1])
+                i = skipSemicolon(tokens, i + 2)
+
+            case "USEMINSPACING":
+                guard i + 2 < tokens.count, ["ON", "OFF"].contains(tokens[i + 2].uppercased()) else {
+                    throw LEFError.invalidStructure("Invalid USEMINSPACING OBS policy")
+                }
+                doc.obstructionSpacingUsesMinimumWidth = tokens[i + 2].uppercased() == "ON"
+                i = skipSemicolon(tokens, i + 3)
+
             case "PROPERTYDEFINITIONS":
-                i += 1
-                i = skipToEndKeyword(tokens, from: i, keyword: "PROPERTYDEFINITIONS")
+                let parsed = try LEFPropertyDefinitionCodec.read(tokens, from: i + 1)
+                doc.propertyDefinitions = parsed.definitions
+                i = parsed.next
 
             case "NONDEFAULTRULE":
                 i += 1
@@ -103,12 +116,13 @@ public enum LEFLibraryReader {
             }
         }
 
+        try LEFViaGenerationCodec.validate(doc.viaGenerationRules, layers: doc.layers)
         return doc
     }
 
     // MARK: - UNITS
 
-    private static func parseUnits(_ tokens: [String], from start: Int, doc: inout LEFDocument) -> Int {
+    private static func parseUnits(_ tokens: [String], from start: Int, doc: inout LEFDocument) throws -> Int {
         var i = start
         while i < tokens.count {
             let upper = tokens[i].uppercased()
@@ -117,26 +131,24 @@ public enum LEFLibraryReader {
                 if i < tokens.count && tokens[i].uppercased() == "UNITS" { i += 1 }
                 return i
             }
-            if upper == "DATABASE" {
-                i += 1
-                if i < tokens.count && tokens[i].uppercased() == "MICRONS" {
-                    i += 1
-                    if i < tokens.count, let val = Double(tokens[i]) {
-                        doc.dbuPerMicron = val
-                        i += 1
-                    }
-                }
-                i = skipSemicolon(tokens, i)
-            } else {
-                i += 1
+            guard i + 2 < tokens.count, let value = Double(tokens[i + 2]) else {
+                throw LEFError.missingValue(command: upper)
             }
+            if upper == "DATABASE" {
+                doc.dbuPerMicron = value
+                doc.hasDatabaseUnitsDeclaration = true
+            }
+            else if let statement = LEFUnitStatement.all.first(where: { $0.command == upper }) {
+                doc.unitDeclarations[keyPath: statement.keyPath] = value
+            } else { throw LEFError.unsupportedCommand(upper) }
+            i = skipSemicolon(tokens, i + 3)
         }
-        return i
+        throw LEFError.invalidStructure("unterminated UNITS")
     }
 
     // MARK: - LAYER
 
-    private static func parseLayer(_ tokens: [String], from start: Int) throws -> (LEFLayerDef?, Int) {
+    private static func parseLayer(_ tokens: [String], from start: Int, definitions: [IRTechPropertyDefinition]) throws -> (LEFLayerDef?, Int) {
         guard start < tokens.count else { return (nil, start) }
         let name = tokens[start]
         var i = start + 1
@@ -147,18 +159,23 @@ public enum LEFLibraryReader {
         var spacing: Double?
         var offset: IRTechAxisValue?
         var resistance: Double?
+        var cutResistanceOhms: Double?
+        var currentDensityStatements: [(kind: IRTechCurrentDensityLimit.Kind, value: Double)] = []
         var capacitance: Double?
         var edgeCapacitance: Double?
         var thickness: Double?
         var minwidth: Double?
         var maxwidth: Double?
         var area: Double?
-        var enclosure: LEFEnclosure?
+        var minimumEnclosedAreas: [Double] = []
+        var enclosures: [IRTechLayerEnclosure] = []
         var spacingTable: LEFSpacingTable?
         var minimumDensity: Double?
         var maximumDensity: Double?
         var densityCheckWindow: LEFLayerDef.DensityCheckWindow?
         var densityCheckStep: Double?
+        var properties: [IRTechPropertyAssignment] = []
+        var antennaStatements: [IRTechAntennaStatement] = []
 
         while i < tokens.count {
             let upper = tokens[i].uppercased()
@@ -171,11 +188,31 @@ public enum LEFLibraryReader {
                                     capacitance: capacitance, edgeCapacitance: edgeCapacitance,
                                     thickness: thickness, minwidth: minwidth,
                                     maxwidth: maxwidth, area: area,
-                                    enclosure: enclosure, spacingTable: spacingTable,
+                                    spacingTable: spacingTable,
                                     minimumDensity: minimumDensity,
                                     maximumDensity: maximumDensity,
                                     densityCheckWindow: densityCheckWindow,
-                                    densityCheckStep: densityCheckStep), i)
+                                    densityCheckStep: densityCheckStep, properties: properties,
+                                    subtype: try LEFLayerPropertyCodec.subtype(properties, type: type),
+                                    antennaStatements: antennaStatements, enclosures: enclosures,
+                                    cutResistanceOhms: cutResistanceOhms,
+                                    currentDensityLimits: try currentDensityStatements.map {
+                                        try LEFCurrentDensityCodec.makeLimit(kind: $0.kind, value: $0.value, layerType: type)
+                                    }, minimumEnclosedAreas: minimumEnclosedAreas), i)
+            }
+
+            if LEFCurrentDensityCodec.commands.contains(upper) {
+                let parsed = try LEFCurrentDensityCodec.read(tokens, from: i)
+                currentDensityStatements.append((parsed.kind, parsed.value))
+                i = parsed.next
+                continue
+            }
+
+            if LEFAntennaCodec.commands.contains(upper) {
+                let parsed = try LEFAntennaCodec.read(tokens, from: i)
+                antennaStatements.append(parsed.statement)
+                i = parsed.next
+                continue
             }
 
             switch upper {
@@ -226,12 +263,12 @@ public enum LEFLibraryReader {
                 i = skipSemicolon(tokens, i)
             case "RESISTANCE":
                 i += 1
-                if i < tokens.count && tokens[i].uppercased() == "RPERSQ" {
+                if tokens[i].uppercased() == "RPERSQ" {
+                    resistance = try validatedDouble(tokens[i + 1], command: upper)
+                    i += 2
+                } else {
+                    cutResistanceOhms = try validatedDouble(tokens[i], command: upper)
                     i += 1
-                    if i < tokens.count, let val = Double(tokens[i]) {
-                        resistance = val
-                        i += 1
-                    }
                 }
                 i = skipSemicolon(tokens, i)
             case "CAPACITANCE":
@@ -279,16 +316,14 @@ public enum LEFLibraryReader {
                     i += 1
                 }
                 i = skipSemicolon(tokens, i)
+            case "MINENCLOSEDAREA":
+                let parsed = try LEFMinimumEnclosedAreaCodec.read(tokens, from: i)
+                minimumEnclosedAreas.append(parsed.area)
+                i = parsed.next
             case "ENCLOSURE":
-                i += 1
-                if i < tokens.count, let oh1 = Double(tokens[i]) {
-                    i += 1
-                    if i < tokens.count, let oh2 = Double(tokens[i]) {
-                        enclosure = LEFEnclosure(overhang1: oh1, overhang2: oh2)
-                        i += 1
-                    }
-                }
-                i = skipSemicolon(tokens, i)
+                let parsed = try LEFLayerEnclosureCodec.read(tokens, from: i)
+                enclosures.append(parsed.enclosure)
+                i = parsed.next
             case "SPACINGTABLE":
                 i += 1
                 let (tbl, next) = parseSpacingTable(tokens, from: i)
@@ -314,16 +349,17 @@ public enum LEFLibraryReader {
                 densityCheckStep = try validatedDouble(tokens[i], command: upper)
                 i = skipSemicolon(tokens, i + 1)
             case "PROPERTY":
-                i += 1
-                i = skipToSemicolon(tokens, i)
-                i = skipSemicolon(tokens, i)
-            case "ANTENNAMODEL", "ANTENNACUMDIFFSIDEAREARATIO", "ANTENNACUMROUTINGAREARATIO",
-                 "ANTENNADIFFAREARATIO", "ANTENNADIFFSIDEAREARATIO", "ANTENNAAREARATIO",
+                let parsed = try LEFLayerPropertyCodec.read(tokens, from: i + 1, definitions: definitions)
+                properties.append(contentsOf: parsed.properties)
+                try LEFLayerPropertyCodec.validate(properties, definitions: definitions)
+                i = parsed.next
+            // FIXME(INCOMPLETE_IMPLEMENTATION): Other layer antenna laws and minimum-cut
+            // rules lack retained schemas; production preflight refuses them. Source,
+            // writer and projection validation must exist before these branches are admitted.
+            case "ANTENNACUMDIFFSIDEAREARATIO", "ANTENNACUMROUTINGAREARATIO", "ANTENNAAREARATIO",
                  "ANTENNASIDEAREARATIO", "ANTENNAAREAFACTOR", "ANTENNACUMAREARATIO",
                  "ANTENNADIFFAREAFACTOR", "MINIMUMCUT":
-                i += 1
-                i = skipToSemicolon(tokens, i)
-                i = skipSemicolon(tokens, i)
+                throw LEFError.unsupportedCommand(upper)
             default:
                 i += 1
             }
@@ -335,11 +371,17 @@ public enum LEFLibraryReader {
                             capacitance: capacitance, edgeCapacitance: edgeCapacitance,
                             thickness: thickness, minwidth: minwidth,
                             maxwidth: maxwidth, area: area,
-                            enclosure: enclosure, spacingTable: spacingTable,
+                            spacingTable: spacingTable,
                             minimumDensity: minimumDensity,
                             maximumDensity: maximumDensity,
                             densityCheckWindow: densityCheckWindow,
-                            densityCheckStep: densityCheckStep), i)
+                            densityCheckStep: densityCheckStep, properties: properties,
+                            subtype: try LEFLayerPropertyCodec.subtype(properties, type: type),
+                            antennaStatements: antennaStatements, enclosures: enclosures,
+                            cutResistanceOhms: cutResistanceOhms,
+                            currentDensityLimits: try currentDensityStatements.map {
+                                try LEFCurrentDensityCodec.makeLimit(kind: $0.kind, value: $0.value, layerType: type)
+                            }, minimumEnclosedAreas: minimumEnclosedAreas), i)
     }
 
     private static func validatedDouble(_ token: String, command: String) throws -> Double {
@@ -368,7 +410,8 @@ public enum LEFLibraryReader {
             }
             i += 1
         }
-        if i < tokens.count && tokens[i] == ";" { i += 1 }
+        let legacyHeader = i < tokens.count && tokens[i] == ";"
+        if legacyHeader { i += 1 }
 
         var entries: [LEFSpacingTable.WidthEntry] = []
         while i < tokens.count {
@@ -385,8 +428,10 @@ public enum LEFLibraryReader {
                     }
                     i += 1
                 }
+                let tableEnded = i < tokens.count && tokens[i] == ";" && !legacyHeader
                 i = skipSemicolon(tokens, i)
                 entries.append(LEFSpacingTable.WidthEntry(width: w, spacings: spacings))
+                if tableEnded { break }
             } else {
                 break
             }
@@ -568,7 +613,7 @@ public enum LEFLibraryReader {
 
     // MARK: - MACRO
 
-    private static func parseMacro(_ tokens: [String], from start: Int) -> (LEFMacroDef?, Int) {
+    private static func parseMacro(_ tokens: [String], from start: Int) throws -> (LEFMacroDef?, Int) {
         guard start < tokens.count else { return (nil, start) }
         let name = tokens[start]
         var i = start + 1
@@ -658,12 +703,12 @@ public enum LEFLibraryReader {
                 i = next
             case "PIN":
                 i += 1
-                let (pin, next) = parsePin(tokens, from: i)
+                let (pin, next) = try parsePin(tokens, from: i)
                 if let pin = pin { macro.pins.append(pin) }
                 i = next
             case "OBS":
                 i += 1
-                let (obs, next) = parseOBS(tokens, from: i)
+                let (obs, next) = try parseOBS(tokens, from: i)
                 macro.obs = obs
                 i = next
             default:
@@ -676,7 +721,7 @@ public enum LEFLibraryReader {
 
     // MARK: - PIN
 
-    private static func parsePin(_ tokens: [String], from start: Int) -> (LEFPinDef?, Int) {
+    private static func parsePin(_ tokens: [String], from start: Int) throws -> (LEFPinDef?, Int) {
         guard start < tokens.count else { return (nil, start) }
         let name = tokens[start]
         var i = start + 1
@@ -749,7 +794,7 @@ public enum LEFLibraryReader {
                 i = next
             case "PORT":
                 i += 1
-                let (ports, next) = parsePortMultiLayer(tokens, from: i)
+                let (ports, next) = try parsePortMultiLayer(tokens, from: i)
                 pin.ports.append(contentsOf: ports)
                 i = next
             case "ANTENNAPARTIALMETALAREA", "ANTENNAPARTIALMETALSIDEAREA",
@@ -768,22 +813,26 @@ public enum LEFLibraryReader {
 
     // MARK: - PORT / OBS
 
-    private static func parsePortMultiLayer(_ tokens: [String], from start: Int) -> ([LEFPort], Int) {
+    private static func parsePortMultiLayer(_ tokens: [String], from start: Int) throws -> ([LEFPort], Int) {
         var i = start
         var ports: [LEFPort] = []
         var currentLayer = ""
         var rects: [LEFRect] = []
         var polygons: [[LEFPoint]] = []
+        var paths: [LEFPath] = []
+        var currentWidth: Double?
         var vias: [LEFPortVia] = []
         var portClass: LEFPort.PortClass?
+
+        func currentPort() -> LEFPort {
+            LEFPort(layerName: currentLayer, rects: rects, polygons: polygons,
+                paths: paths, vias: vias, portClass: portClass)
+        }
 
         while i < tokens.count {
             let upper = tokens[i].uppercased()
             if upper == "END" {
-                if !currentLayer.isEmpty || !rects.isEmpty || !polygons.isEmpty || !vias.isEmpty {
-                    ports.append(LEFPort(layerName: currentLayer, rects: rects, polygons: polygons,
-                                         vias: vias, portClass: portClass))
-                }
+                if !currentLayer.isEmpty { ports.append(currentPort()) }
                 return (ports, i + 1)
             }
             switch upper {
@@ -795,16 +844,29 @@ public enum LEFLibraryReader {
                 }
                 i = skipSemicolon(tokens, i)
             case "LAYER":
-                if !currentLayer.isEmpty || !rects.isEmpty || !polygons.isEmpty || !vias.isEmpty {
-                    ports.append(LEFPort(layerName: currentLayer, rects: rects, polygons: polygons,
-                                         vias: vias, portClass: portClass))
-                    rects = []
-                    polygons = []
-                    vias = []
-                }
+                if !currentLayer.isEmpty { ports.append(currentPort()) }
+                rects = []; polygons = []; paths = []; vias = []; currentWidth = nil
                 i += 1
                 if i < tokens.count { currentLayer = tokens[i]; i += 1 }
                 i = skipSemicolon(tokens, i)
+            case "WIDTH":
+                i += 1
+                guard !currentLayer.isEmpty, i < tokens.count, let width = Double(tokens[i]),
+                      width.isFinite, width > 0 else {
+                    throw LEFError.invalidGeometry("PATH WIDTH requires a selected layer and finite positive value")
+                }
+                currentWidth = width
+                i = skipSemicolon(tokens, i + 1)
+            case "PATH":
+                i += 1
+                guard !currentLayer.isEmpty, let width = currentWidth else {
+                    throw LEFError.invalidGeometry("PATH requires a previous WIDTH on its selected layer")
+                }
+                let (points, next) = parsePolygon(tokens, from: i)
+                let path = LEFPath(width: width, points: points)
+                try path.validateGeometry()
+                paths.append(path)
+                i = skipSemicolon(tokens, next)
             case "RECT":
                 i += 1
                 if let (rect, next) = parseRect(tokens, from: i) {
@@ -816,13 +878,11 @@ public enum LEFLibraryReader {
                 i += 1
                 let (poly, next) = parsePolygon(tokens, from: i)
                 if !poly.isEmpty { polygons.append(poly) }
-                i = next
-                i = skipSemicolon(tokens, i)
+                i = skipSemicolon(tokens, next)
             case "VIA":
                 i += 1
                 if i + 2 < tokens.count, let x = Double(tokens[i]), let y = Double(tokens[i+1]) {
-                    let viaName = tokens[i+2]
-                    vias.append(LEFPortVia(viaName: viaName, point: LEFPoint(x: x, y: y)))
+                    vias.append(LEFPortVia(viaName: tokens[i+2], point: LEFPoint(x: x, y: y)))
                     i += 3
                 }
                 i = skipSemicolon(tokens, i)
@@ -830,61 +890,12 @@ public enum LEFLibraryReader {
                 i += 1
             }
         }
-
-        if !currentLayer.isEmpty || !rects.isEmpty || !polygons.isEmpty || !vias.isEmpty {
-            ports.append(LEFPort(layerName: currentLayer, rects: rects, polygons: polygons,
-                                 vias: vias, portClass: portClass))
-        }
+        if !currentLayer.isEmpty { ports.append(currentPort()) }
         return (ports, i)
     }
 
-    private static func parseOBS(_ tokens: [String], from start: Int) -> ([LEFPort], Int) {
-        var i = start
-        var ports: [LEFPort] = []
-        var layerName = ""
-        var rects: [LEFRect] = []
-        var polygons: [[LEFPoint]] = []
-
-        while i < tokens.count {
-            let upper = tokens[i].uppercased()
-            if upper == "END" {
-                if !layerName.isEmpty || !rects.isEmpty || !polygons.isEmpty {
-                    ports.append(LEFPort(layerName: layerName, rects: rects, polygons: polygons))
-                }
-                return (ports, i + 1)
-            }
-            switch upper {
-            case "LAYER":
-                if !layerName.isEmpty || !rects.isEmpty || !polygons.isEmpty {
-                    ports.append(LEFPort(layerName: layerName, rects: rects, polygons: polygons))
-                    rects = []
-                    polygons = []
-                }
-                i += 1
-                if i < tokens.count { layerName = tokens[i]; i += 1 }
-                i = skipSemicolon(tokens, i)
-            case "RECT":
-                i += 1
-                if let (rect, next) = parseRect(tokens, from: i) {
-                    rects.append(rect)
-                    i = next
-                }
-                i = skipSemicolon(tokens, i)
-            case "POLYGON":
-                i += 1
-                let (poly, next) = parsePolygon(tokens, from: i)
-                if !poly.isEmpty { polygons.append(poly) }
-                i = next
-                i = skipSemicolon(tokens, i)
-            default:
-                i += 1
-            }
-        }
-
-        if !layerName.isEmpty || !rects.isEmpty || !polygons.isEmpty {
-            ports.append(LEFPort(layerName: layerName, rects: rects, polygons: polygons))
-        }
-        return (ports, i)
+    private static func parseOBS(_ tokens: [String], from start: Int) throws -> ([LEFPort], Int) {
+        try parsePortMultiLayer(tokens, from: start)
     }
 
     // MARK: - Property

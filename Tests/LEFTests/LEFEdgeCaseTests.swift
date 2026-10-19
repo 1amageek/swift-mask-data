@@ -68,8 +68,8 @@ struct LEFReaderEdgeCaseTests {
     }
 
     @Test func unsupportedCommandFailsClosed() {
-        let lef = "VERSION 5.8 ; PROPERTYDEFINITIONS END PROPERTYDEFINITIONS END LIBRARY"
-        #expect(throws: LEFError.unsupportedCommand("PROPERTYDEFINITIONS")) {
+        let lef = "VERSION 5.8 ; NONDEFAULTRULE custom END custom END LIBRARY"
+        #expect(throws: LEFError.unsupportedCommand("NONDEFAULTRULE")) {
             try LEFLibraryReader.read(Data(lef.utf8))
         }
     }
@@ -241,7 +241,6 @@ struct LEFReaderEdgeCaseTests {
     @Test func acceptedStatementsCannotDisappear() {
         let statements = [
             "NAMESCASESENSITIVE OFF ;",
-            "MANUFACTURINGGRID 0.005 ;",
             "LAYER M1 TYPE ROUTING ; PROPERTY custom 1 ; END M1",
             "LAYER M1 TYPE ROUTING ; DIRECTION INPUT ; END M1",
             "LAYER M1 TYPE ROUTING ; WIDTH 0.1 ; WIDTH 0.2 ; END M1",

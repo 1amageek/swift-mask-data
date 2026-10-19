@@ -5,6 +5,15 @@ import TechIR
 public enum LEFLibraryWriter {
 
     public static func write(_ doc: LEFDocument) throws -> Data {
+        if let grid = doc.manufacturingGrid, !grid.isFinite || grid <= 0 {
+            throw LEFError.invalidStructure("MANUFACTURINGGRID requires a finite positive value")
+        }
+        try LEFViaGenerationCodec.validate(doc.viaGenerationRules, layers: doc.layers)
+        try LEFStrictValidator.validate(doc.unitDeclarations)
+        try LEFUnitStatement.validateDatabase(doc.dbuPerMicron)
+        guard doc.hasDatabaseUnitsDeclaration || doc.dbuPerMicron == 100 else {
+            throw LEFError.invalidStructure("An implicit standalone LEF database precision must be 100")
+        }
         var lines: [String] = []
 
         lines.append("VERSION \(doc.version) ;")
@@ -18,9 +27,26 @@ public enum LEFLibraryWriter {
         }
 
         lines.append("UNITS")
-        lines.append("  DATABASE MICRONS \(formatNum(doc.dbuPerMicron)) ;")
+        for statement in LEFUnitStatement.all {
+            if let value = doc.unitDeclarations[keyPath: statement.keyPath] {
+                lines.append("  \(statement.command) \(statement.unit) \(formatNum(value)) ;")
+            }
+        }
+        if doc.hasDatabaseUnitsDeclaration { lines.append("  DATABASE MICRONS \(formatNum(doc.dbuPerMicron)) ;") }
         lines.append("END UNITS")
         lines.append("")
+
+        if let grid = doc.manufacturingGrid {
+            lines.append("MANUFACTURINGGRID \(formatNum(grid)) ;")
+            lines.append("")
+        }
+
+        if let minimum = doc.obstructionSpacingUsesMinimumWidth {
+            lines.append("USEMINSPACING OBS \(minimum ? "ON" : "OFF") ;")
+            lines.append("")
+        }
+
+        lines.append(contentsOf: try LEFPropertyDefinitionCodec.write(doc.propertyDefinitions))
 
         for site in doc.sites {
             writeSite(site, to: &lines)
@@ -29,6 +55,7 @@ public enum LEFLibraryWriter {
 
         for layer in doc.layers {
             try LEFStrictValidator.validate(layer)
+            try LEFLayerPropertyCodec.validate(layer, definitions: doc.propertyDefinitions)
             writeLayer(layer, to: &lines)
             lines.append("")
         }
@@ -38,8 +65,13 @@ public enum LEFLibraryWriter {
             lines.append("")
         }
 
+        for rule in doc.viaGenerationRules {
+            lines.append(contentsOf: LEFViaGenerationCodec.write(rule))
+            lines.append("")
+        }
+
         for macro in doc.macros {
-            writeMacro(macro, to: &lines)
+            try writeMacro(macro, to: &lines)
             lines.append("")
         }
 
@@ -100,6 +132,9 @@ public enum LEFLibraryWriter {
         if let r = layer.resistance {
             lines.append("  RESISTANCE RPERSQ \(formatNum(r)) ;")
         }
+        if let r = layer.cutResistanceOhms {
+            lines.append("  RESISTANCE \(formatNum(r)) ;")
+        }
         if let c = layer.capacitance {
             lines.append("  CAPACITANCE CPERSQDIST \(formatNum(c)) ;")
         }
@@ -118,9 +153,10 @@ public enum LEFLibraryWriter {
         if let a = layer.area {
             lines.append("  AREA \(formatNum(a)) ;")
         }
-        if let enc = layer.enclosure {
-            lines.append("  ENCLOSURE \(formatNum(enc.overhang1)) \(formatNum(enc.overhang2)) ;")
+        for area in layer.minimumEnclosedAreas {
+            lines.append("  MINENCLOSEDAREA \(area) ;")
         }
+        lines.append(contentsOf: layer.enclosures.map { LEFLayerEnclosureCodec.write($0) })
         if let tbl = layer.spacingTable {
             writeSpacingTable(tbl, to: &lines)
         }
@@ -138,16 +174,20 @@ public enum LEFLibraryWriter {
         if let step = layer.densityCheckStep {
             lines.append("  DENSITYCHECKSTEP \(formatNum(step)) ;")
         }
+        lines.append(contentsOf: layer.currentDensityLimits.map { LEFCurrentDensityCodec.write($0) })
+        lines.append(contentsOf: layer.antennaStatements.map { LEFAntennaCodec.write($0) })
+        lines.append(contentsOf: layer.properties.map { LEFLayerPropertyCodec.write($0) })
         lines.append("END \(layer.name)")
     }
 
     private static func writeSpacingTable(_ tbl: LEFSpacingTable, to lines: inout [String]) {
         let prlStr = tbl.parallelRunLengths.map { formatNum($0) }.joined(separator: " ")
         lines.append("  SPACINGTABLE")
-        lines.append("    PARALLELRUNLENGTH \(prlStr) ;")
-        for entry in tbl.widthEntries {
+        lines.append("    PARALLELRUNLENGTH \(prlStr)")
+        for (index, entry) in tbl.widthEntries.enumerated() {
             let spacingStr = entry.spacings.map { formatNum($0) }.joined(separator: " ")
-            lines.append("    WIDTH \(formatNum(entry.width)) \(spacingStr) ;")
+            let terminator = index == tbl.widthEntries.count - 1 ? " ;" : ""
+            lines.append("    WIDTH \(formatNum(entry.width)) \(spacingStr)\(terminator)")
         }
     }
 
@@ -195,7 +235,7 @@ public enum LEFLibraryWriter {
 
     // MARK: - MACRO
 
-    private static func writeMacro(_ macro: LEFMacroDef, to lines: inout [String]) {
+    private static func writeMacro(_ macro: LEFMacroDef, to lines: inout [String]) throws {
         lines.append("MACRO \(macro.name)")
         if let cls = macro.macroClass {
             var classLine = "  CLASS \(cls.rawValue)"
@@ -235,7 +275,7 @@ public enum LEFLibraryWriter {
             lines.append("  PROPERTY \(prop.key) \"\(prop.value)\" ;")
         }
         for pin in macro.pins {
-            writePin(pin, to: &lines)
+            try writePin(pin, to: &lines)
         }
         if !macro.obs.isEmpty {
             lines.append("  OBS")
@@ -247,6 +287,7 @@ public enum LEFLibraryWriter {
                     rectStr += " \(formatNum(r.x1)) \(formatNum(r.y1)) \(formatNum(r.x2)) \(formatNum(r.y2)) ;"
                     lines.append(rectStr)
                 }
+                try writePaths(port.paths, indentation: "      ", to: &lines)
                 for poly in port.polygons {
                     let ptsStr = poly.map { "\(formatNum($0.x)) \(formatNum($0.y))" }.joined(separator: " ")
                     lines.append("      POLYGON \(ptsStr) ;")
@@ -257,7 +298,7 @@ public enum LEFLibraryWriter {
         lines.append("END \(macro.name)")
     }
 
-    private static func writePin(_ pin: LEFPinDef, to lines: inout [String]) {
+    private static func writePin(_ pin: LEFPinDef, to lines: inout [String]) throws {
         lines.append("  PIN \(pin.name)")
         if let dir = pin.direction {
             lines.append("    DIRECTION \(dir.rawValue) ;")
@@ -295,6 +336,7 @@ public enum LEFLibraryWriter {
                 rectStr += " \(formatNum(r.x1)) \(formatNum(r.y1)) \(formatNum(r.x2)) \(formatNum(r.y2)) ;"
                 lines.append(rectStr)
             }
+            try writePaths(port.paths, indentation: "        ", to: &lines)
             for poly in port.polygons {
                 let ptsStr = poly.map { "\(formatNum($0.x)) \(formatNum($0.y))" }.joined(separator: " ")
                 lines.append("        POLYGON \(ptsStr) ;")
@@ -305,6 +347,15 @@ public enum LEFLibraryWriter {
             lines.append("    END")
         }
         lines.append("  END \(pin.name)")
+    }
+
+    private static func writePaths(_ paths: [LEFPath], indentation: String, to lines: inout [String]) throws {
+        for path in paths {
+            try path.validateGeometry()
+            lines.append("\(indentation)WIDTH \(formatNum(path.width)) ;")
+            let points = path.points.map { "\(formatNum($0.x)) \(formatNum($0.y))" }.joined(separator: " ")
+            lines.append("\(indentation)PATH \(points) ;")
+        }
     }
 
     // MARK: - Helpers

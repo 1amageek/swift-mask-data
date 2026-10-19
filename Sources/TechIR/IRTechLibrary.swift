@@ -4,7 +4,13 @@
 /// technology information. It can be populated from LEF, KLayout `.lyp`,
 /// or JSON files and converted to a downstream `LayoutTechDatabase`.
 public struct IRTechLibrary: Hashable, Sendable, Codable {
+    public var viaGenerationRules: [IRTechViaGenerationRule]
+    public var propertyDefinitions: [IRTechPropertyDefinition]
+    public var obstructionSpacingUsesMinimumWidth: Bool?
+    public var hasDatabaseUnitsDeclaration: Bool
+    public var unitDeclarations: IRTechUnitDeclarations
     public var name: String
+    public var manufacturingGrid: Double?
     public var dbuPerMicron: Double
     public var layers: [IRTechLayerDef]
     public var vias: [IRTechViaDef]
@@ -27,8 +33,19 @@ public struct IRTechLibrary: Hashable, Sendable, Codable {
         extensionRules: [IRTechExtensionRule] = [],
         minimumCutRules: [IRTechMinimumCutRule] = [],
         antennaRules: [IRTechAntennaRule] = [],
-        metadata: [String: String] = [:]
+        metadata: [String: String] = [:],
+        manufacturingGrid: Double? = nil,
+        unitDeclarations: IRTechUnitDeclarations = .init(),
+        hasDatabaseUnitsDeclaration: Bool = true,
+        propertyDefinitions: [IRTechPropertyDefinition] = [], obstructionSpacingUsesMinimumWidth: Bool? = nil,
+        viaGenerationRules: [IRTechViaGenerationRule] = []
     ) {
+        self.viaGenerationRules = viaGenerationRules
+        self.propertyDefinitions = propertyDefinitions
+        self.obstructionSpacingUsesMinimumWidth = obstructionSpacingUsesMinimumWidth
+        self.hasDatabaseUnitsDeclaration = hasDatabaseUnitsDeclaration
+        self.unitDeclarations = unitDeclarations
+        self.manufacturingGrid = manufacturingGrid
         self.name = name
         self.dbuPerMicron = dbuPerMicron
         self.layers = layers
@@ -43,7 +60,13 @@ public struct IRTechLibrary: Hashable, Sendable, Codable {
     }
 
     private enum CodingKeys: String, CodingKey {
+        case viaGenerationRules
+        case propertyDefinitions
+        case obstructionSpacingUsesMinimumWidth
+        case hasDatabaseUnitsDeclaration
+        case unitDeclarations
         case name
+        case manufacturingGrid
         case dbuPerMicron
         case layers
         case vias
@@ -58,6 +81,12 @@ public struct IRTechLibrary: Hashable, Sendable, Codable {
 
     public init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.viaGenerationRules = try container.decodeIfPresent([IRTechViaGenerationRule].self, forKey: .viaGenerationRules) ?? []
+        self.propertyDefinitions = try container.decodeIfPresent([IRTechPropertyDefinition].self, forKey: .propertyDefinitions) ?? []
+        self.obstructionSpacingUsesMinimumWidth = try container.decodeIfPresent(Bool.self, forKey: .obstructionSpacingUsesMinimumWidth)
+        self.hasDatabaseUnitsDeclaration = try container.decodeIfPresent(Bool.self, forKey: .hasDatabaseUnitsDeclaration) ?? true
+        self.unitDeclarations = try container.decodeIfPresent(IRTechUnitDeclarations.self, forKey: .unitDeclarations) ?? .init()
+        self.manufacturingGrid = try container.decodeIfPresent(Double.self, forKey: .manufacturingGrid)
         self.name = try container.decode(String.self, forKey: .name)
         self.dbuPerMicron = try container.decode(Double.self, forKey: .dbuPerMicron)
         self.layers = try container.decode([IRTechLayerDef].self, forKey: .layers)

@@ -12,6 +12,28 @@ import FormatDetector
 
 @Suite("Golden Mask Data Corpus")
 struct GoldenMaskDataCorpusTests {
+    @Test func unsupportedLibraryMetadataCannotBecomeWriterSuccess() throws {
+        let library = IRLibrary(name: "LIBPROP", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
+            cells: [IRCell(name: "TOP")], metadata: ["owner": "library"])
+        #expect(throws: GDSError.self) { _ = try GDSLibraryWriter.write(library) }
+        #expect(throws: CIFError.self) { _ = try CIFLibraryWriter.write(library) }
+        #expect(throws: DXFError.self) { _ = try DXFLibraryWriter.write(library) }
+        #expect(throws: LEFError.self) { _ = try LEFIRConverter.toLEFDocument(library) }
+        let oasis = try OASISLibraryReader.read(OASISLibraryWriter.write(library))
+        #expect(oasis.metadata == library.metadata)
+    }
+
+    @Test func unrepresentedCellPropertiesCannotDisappearAcrossCodecs() throws {
+        let library = IRLibrary(name: "CELLPROP", databaseUnitScale: try DatabaseUnitScale(databaseUnitsPerMicrometer: 1000),
+            cells: [IRCell(name: "TOP", properties: [IRProperty(attribute: 0, value: "owner=source")])])
+        #expect(throws: GDSError.self) { _ = try GDSLibraryWriter.write(library) }
+        #expect(throws: CIFError.self) { _ = try CIFLibraryWriter.write(library) }
+        #expect(throws: DXFError.self) { _ = try DXFLibraryWriter.write(library) }
+        #expect(throws: LEFError.self) { _ = try LEFIRConverter.toLEFDocument(library) }
+        let oasis = try OASISLibraryReader.read(OASISLibraryWriter.write(library))
+        #expect(oasis.cells[0].properties == library.cells[0].properties)
+    }
+
     @Test func independentGDSIIFixtureHasExpectedSemantics() throws {
         let data = try Self.fixtureData(named: "minimal.gds")
         #expect(FormatDetector.detect(data) == .gdsii)

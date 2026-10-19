@@ -776,23 +776,23 @@ public enum DXFLibraryReader {
         let mirrorX = scaleX < 0
         let absX = abs(scaleX)
         let absY = abs(scaleY)
-        guard scaleY > 0, abs(absX - absY) < 1e-9 else {
+        guard scaleY > 0, absX == absY else {
             throw DXFError.unsupportedTransform(
                 entity: "INSERT",
                 reason: "non-uniform or Y-axis mirrored scale"
             )
         }
         let mag = absX
-        let isIdentityMag = abs(mag - 1.0) < 1e-9
-        let isIdentityRot = abs(rotation) < 1e-9
-        let isIdentityScale = isIdentityMag && abs(absY - absX) < 1e-9
+        let isIdentityMag = mag == 1
+        let isIdentityRot = rotation == 0
+        let isIdentityScale = isIdentityMag
 
         let transform: IRTransform
         if mirrorX || !isIdentityRot || !isIdentityScale {
             transform = IRTransform(
                 mirrorX: mirrorX,
                 magnification: isIdentityMag ? 1.0 : mag,
-                angle: rotation
+                angle: rotation + (mirrorX ? 180 : 0)
             )
         } else {
             transform = .identity
@@ -800,17 +800,10 @@ public enum DXFLibraryReader {
 
         // Array insert
         if cols > 1 || rows > 1 {
-            let colDist = try DXFCoordinate.scaled(colSpacing, by: dbu, entity: "INSERT")
-            let rowDist = try DXFCoordinate.scaled(rowSpacing, by: dbu, entity: "INSERT")
-            // Reference points: [origin, col-end, row-end]
-            let colEnd = IRPoint(
-                x: try DXFCoordinate.adding(origin.x, count: Int(cols), spacing: colDist, entity: "INSERT"),
-                y: origin.y
-            )
-            let rowEnd = IRPoint(
-                x: origin.x,
-                y: try DXFCoordinate.adding(origin.y, count: Int(rows), spacing: rowDist, entity: "INSERT")
-            )
+            let colEnd = try DXFArrayGeometry.endpoint(origin: origin, spacing: colSpacing,
+                count: cols, column: true, rotation: rotation, dbu: dbu)
+            let rowEnd = try DXFArrayGeometry.endpoint(origin: origin, spacing: rowSpacing,
+                count: rows, column: false, rotation: rotation, dbu: dbu)
             return .arrayRef(IRArrayRef(
                 cellName: blockName,
                 transform: transform,

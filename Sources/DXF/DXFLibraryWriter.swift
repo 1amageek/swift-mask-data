@@ -17,10 +17,16 @@ public enum DXFLibraryWriter {
     }
 
     public static func write(_ library: IRLibrary, options: Options = .init()) throws -> Data {
+        guard library.metadata.isEmpty else {
+            throw DXFError.invalidGeometry("library metadata is not representable")
+        }
         // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
         // Production write calls must reject before serialization until resolved geometry and
         // the explicit via role can be preserved by the standard encoding.
         for cell in library.cells {
+            guard cell.properties.isEmpty else {
+                throw DXFError.invalidGeometry("cell properties are not representable")
+            }
             for element in cell.elements {
                 if case .via = element { throw DXFError.unsupportedEntity("Named via requires a bound master and role-preserving encoding.") }
             }
@@ -296,12 +302,17 @@ public enum DXFLibraryWriter {
             throw DXFError.invalidGeometry("array reference is incomplete or has unrepresentable properties")
         }
         try validateTransform(aref.transform, entity: "INSERT")
+        let origin = aref.referencePoints[0]
+        let rotation = aref.transform.angle - (aref.transform.mirrorX ? 180 : 0)
+        let columnSpacing = try DXFArrayGeometry.spacing(origin: origin, endpoint: aref.referencePoints[1],
+            count: aref.columns, column: true, rotation: rotation, dbu: dbu)
+        let rowSpacing = try DXFArrayGeometry.spacing(origin: origin, endpoint: aref.referencePoints[2],
+            count: aref.rows, column: false, rotation: rotation, dbu: dbu)
         lines.append("  0")
         lines.append("INSERT")
         lines.append("  2")
         lines.append(aref.cellName)
 
-        let origin = aref.referencePoints[0]
         lines.append(" 10")
         lines.append(formatCoord(Double(origin.x) / dbu))
         lines.append(" 20")
@@ -314,43 +325,31 @@ public enum DXFLibraryWriter {
         lines.append(" 71")
         lines.append("\(aref.rows)")
 
-        // Column spacing
-        if aref.referencePoints.count >= 2 && aref.columns > 0 {
-            let colEnd = aref.referencePoints[1]
-            let totalColDist = Double(colEnd.x - origin.x) / dbu
-            let colSpacing = totalColDist / Double(aref.columns)
-            lines.append(" 44")
-            lines.append(formatCoord(colSpacing))
-        }
-
-        // Row spacing
-        if aref.referencePoints.count >= 3 && aref.rows > 0 {
-            let rowEnd = aref.referencePoints[2]
-            let totalRowDist = Double(rowEnd.y - origin.y) / dbu
-            let rowSpacing = totalRowDist / Double(aref.rows)
-            lines.append(" 45")
-            lines.append(formatCoord(rowSpacing))
-        }
+        lines.append(" 44")
+        lines.append(formatCoord(columnSpacing))
+        lines.append(" 45")
+        lines.append(formatCoord(rowSpacing))
     }
 
     private static func writeTransformGroups(_ transform: IRTransform, to lines: inout [String]) {
         if transform.mirrorX {
             lines.append(" 41")
             lines.append(formatCoord(-transform.magnification))
-        } else if abs(transform.magnification - 1.0) > 1e-9 {
+        } else if transform.magnification != 1 {
             lines.append(" 41")
             lines.append(formatCoord(transform.magnification))
         }
 
-        if abs(transform.magnification - 1.0) > 1e-9 || transform.mirrorX {
+        if transform.magnification != 1 || transform.mirrorX {
             let yScale = transform.magnification
             lines.append(" 42")
             lines.append(formatCoord(yScale))
         }
 
-        if abs(transform.angle) > 1e-9 {
+        let rotation = transform.angle - (transform.mirrorX ? 180 : 0)
+        if rotation != 0 {
             lines.append(" 50")
-            lines.append(formatCoord(transform.angle))
+            lines.append(formatCoord(rotation))
         }
     }
 
@@ -383,6 +382,6 @@ public enum DXFLibraryWriter {
         if value == value.rounded() && abs(value) < 1e15 {
             return String(format: "%.1f", value)
         }
-        return String(format: "%.6f", value)
+        return String(value)
     }
 }

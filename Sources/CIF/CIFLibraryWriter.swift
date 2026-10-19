@@ -13,10 +13,16 @@ public enum CIFLibraryWriter {
     }
 
     public static func write(_ library: IRLibrary, options: Options = .init()) throws -> Data {
+        guard library.metadata.isEmpty else {
+            throw CIFError.unsupportedGeometry("library metadata")
+        }
         // FIXME(INCOMPLETE_IMPLEMENTATION): Named via export has no bound master resolver.
         // Production write calls must reject before serialization until resolved geometry and
         // the explicit via role can be preserved by the standard encoding.
         for cell in library.cells {
+            guard cell.properties.isEmpty else {
+                throw CIFError.unsupportedGeometry("cell properties")
+            }
             for element in cell.elements {
                 if case .via = element { throw CIFError.unsupportedGeometry("Named via requires a bound master and role-preserving encoding.") }
             }

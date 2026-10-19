@@ -1,4 +1,4 @@
-/// Antenna effect rule for a layer.
+/// An unqualified legacy ratio, without oxide scope or a diffusion-dependent law.
 public struct IRTechAntennaRule: Hashable, Sendable, Codable {
     public var layerName: String
     public var maxRatio: Double

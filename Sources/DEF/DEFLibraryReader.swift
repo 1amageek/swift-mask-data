@@ -9,11 +9,36 @@ public enum DEFLibraryReader {
             throw DEFError.invalidEncoding
         }
 
-        let tokens = DEFTokenizer.tokenize(text)
+        return try readTokens(DEFTokenizer.tokenize(text), strict: false, isCancelled: { false }).0
+    }
+
+    /// Admits explicit source units and represented net geometry/connectivity for routed PEX.
+    public static func readForRoutedPEX(
+        _ data: Data, maximumSourceBytes: Int, isCancelled: () -> Bool = { Task.isCancelled }
+    ) throws -> DEFSourceDocument {
+        guard maximumSourceBytes > 0, data.count <= maximumSourceBytes else {
+            throw DEFError.sourceLimitExceeded(maximumBytes: maximumSourceBytes, actualBytes: data.count)
+        }
+        try checkCancellation(isCancelled)
+        guard let text = String(data: data, encoding: .utf8) else { throw DEFError.invalidEncoding }
+        let tokens = try DEFTokenizer.tokenize(text, checkingCancellation: { try checkCancellation(isCancelled) })
+        let (document, units) = try readTokens(tokens, strict: true, isCancelled: isCancelled)
+        guard let units else {
+            throw DEFError.unsupportedSourceFeature(context: "DEF source", feature: "omitted UNITS DISTANCE MICRONS")
+        }
+        try checkCancellation(isCancelled)
+        return DEFSourceDocument(document: document, unitsDeclaration: units)
+    }
+
+    private static func readTokens(
+        _ tokens: [String], strict: Bool, isCancelled: () -> Bool
+    ) throws -> (DEFDocument, DEFSourceDocument.UnitsDeclaration?) {
         var doc = DEFDocument()
+        var unitsDeclaration: DEFSourceDocument.UnitsDeclaration?
         var i = 0
 
         while i < tokens.count {
+            try checkCancellation(isCancelled)
             switch tokens[i].uppercased() {
             case "VERSION":
                 i += 1
@@ -36,6 +61,23 @@ public enum DEFLibraryReader {
                 i = skip(";", tokens, i)
 
             case "UNITS":
+                if strict {
+                    guard unitsDeclaration == nil else {
+                        throw DEFError.unsupportedSourceFeature(context: "DEF source", feature: "duplicate UNITS")
+                    }
+                    guard i + 4 < tokens.count, tokens[i + 1].uppercased() == "DISTANCE",
+                          tokens[i + 2].uppercased() == "MICRONS", tokens[i + 4] == ";" else {
+                        throw DEFError.invalidSourceSyntax(context: "UNITS", expected: "DISTANCE MICRONS integer ;", token: tokens[i...].first)
+                    }
+                    let literal = tokens[i + 3]
+                    guard let integer = UInt64(literal), integer > 0, let value = Double(exactly: integer) else {
+                        throw DEFError.invalidNumber(context: "UNITS DISTANCE MICRONS", token: literal)
+                    }
+                    unitsDeclaration = .init(dbuPerMicron: value, literal: literal, tokenRange: i..<(i + 5))
+                    doc.dbuPerMicron = value
+                    i += 5
+                    continue
+                }
                 i += 1
                 while i < tokens.count && tokens[i] != ";" {
                     if tokens[i].uppercased() == "MICRONS" {
@@ -87,7 +129,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (nets, next) = try parseNets(tokens, from: i)
+                let (nets, next) = try parseNets(tokens, from: i, strict: strict, isCancelled: isCancelled)
                 doc.nets = nets
                 i = next
 
@@ -95,7 +137,7 @@ public enum DEFLibraryReader {
                 i += 1
                 if i < tokens.count, let _ = Int(tokens[i]) { i += 1 }
                 i = skip(";", tokens, i)
-                let (snets, next) = try parseSpecialNets(tokens, from: i)
+                let (snets, next) = try parseSpecialNets(tokens, from: i, strict: strict, isCancelled: isCancelled)
                 doc.specialNets = snets
                 i = next
 
@@ -161,7 +203,7 @@ public enum DEFLibraryReader {
             }
         }
 
-        return doc
+        return (doc, unitsDeclaration)
     }
 
     // MARK: - DIEAREA
@@ -469,11 +511,13 @@ public enum DEFLibraryReader {
 
     // MARK: - NETS
 
-    private static func parseNets(_ tokens: [String], from start: Int) throws -> ([DEFNet], Int) {
+    private static func parseNets(_ tokens: [String], from start: Int, strict: Bool,
+                                  isCancelled: () -> Bool) throws -> ([DEFNet], Int) {
         var i = start
         var nets: [DEFNet] = []
 
         while i < tokens.count {
+            try checkCancellation(isCancelled)
             if tokens[i].uppercased() == "END" {
                 i += 1
                 if i < tokens.count && tokens[i].uppercased() == "NETS" { i += 1 }
@@ -483,14 +527,23 @@ public enum DEFLibraryReader {
                 i += 1
                 guard i < tokens.count else { break }
                 let name = tokens[i]; i += 1
+                if strict && name.uppercased() == "MUSTJOIN" {
+                    throw DEFError.unsupportedSourceFeature(context: "NETS", feature: "MUSTJOIN")
+                }
                 var conns: [DEFConnection] = []
                 var use: DEFSpecialNet.NetUse?
                 var routing: [DEFRouteWire] = []
                 var props: [DEFProperty] = []
+                var hasNetClauses = false
 
                 while i < tokens.count && tokens[i] != ";" {
+                    try checkCancellation(isCancelled)
                     if tokens[i] == "(" {
+                        if strict && hasNetClauses {
+                            throw DEFError.unsupportedSourceFeature(context: "NET \(name)", feature: "connection after net clauses")
+                        }
                         i += 1
+                        if strict { try validateSourceConnection(tokens, at: i, context: "NET \(name)") }
                         if i + 1 < tokens.count {
                             let comp = tokens[i]; i += 1
                             let pin = tokens[i]; i += 1
@@ -498,6 +551,7 @@ public enum DEFLibraryReader {
                         }
                         i = skip(")", tokens, i)
                     } else if tokens[i] == "+" || tokens[i].uppercased() == "NEW" {
+                        hasNetClauses = true
                         if tokens[i] == "+" { i += 1 }
                         guard i < tokens.count else { break }
                         let kw = tokens[i].uppercased()
@@ -505,12 +559,15 @@ public enum DEFLibraryReader {
                             i += 1
                             if i < tokens.count {
                                 use = DEFSpecialNet.NetUse(rawValue: tokens[i].uppercased())
+                                if strict && use == nil {
+                                    throw DEFError.invalidSourceSyntax(context: "NET \(name) USE", expected: "represented NetUse", token: tokens[i])
+                                }
                                 i += 1
                             }
                         } else if kw == "ROUTED" || kw == "FIXED" || kw == "COVER" || kw == "NOSHIELD" || kw == "NEW" {
                             let status = DEFRouteWire.RouteStatus(rawValue: kw) ?? .routed
                             i += 1
-                            let (wire, next) = try parseRegularWire(tokens, from: i, status: status, netName: name)
+                            let (wire, next) = try parseRegularWire(tokens, from: i, status: status, netName: name, isCancelled: isCancelled)
                             routing.append(wire)
                             i = next
                         } else if ["NONDEFAULTRULE", "TAPER", "TAPERRULE", "STYLE", "MASK", "RECT", "VIRTUAL"].contains(kw) {
@@ -520,9 +577,18 @@ public enum DEFLibraryReader {
                             let (p, next) = parseProperties(tokens, from: i)
                             props = p; i = next
                         } else {
+                            // FIXME(INCOMPLETE_IMPLEMENTATION): Ordinary reads skip unretained net clauses.
+                            // Routed PEX reads must reject geometry/connectivity clauses until their AST exists.
+                            if strict {
+                                i = try skipSourceMetadata(tokens, at: i, context: "NET \(name)")
+                                continue
+                            }
                             i += 1
                         }
                     } else {
+                        if strict {
+                            throw DEFError.unsupportedSourceFeature(context: "NET \(name)", feature: tokens[i])
+                        }
                         i += 1
                     }
                 }
@@ -538,7 +604,8 @@ public enum DEFLibraryReader {
     }
 
     private static func parseRegularWire(
-        _ tokens: [String], from start: Int, status: DEFRouteWire.RouteStatus, netName: String
+        _ tokens: [String], from start: Int, status: DEFRouteWire.RouteStatus, netName: String,
+        isCancelled: () -> Bool
     ) throws -> (DEFRouteWire, Int) {
         var i = start
         guard i < tokens.count else { throw DEFError.missingNumber(context: "NET \(netName) route layer") }
@@ -547,6 +614,7 @@ public enum DEFLibraryReader {
         var points: [IRPoint] = []
         var extensions: [Int32?] = []
         while i < tokens.count && tokens[i] == "(" {
+            try checkCancellation(isCancelled)
             i += 1
             let x = i < tokens.count && tokens[i] == "*"
                 ? try previousRoutePoint(points, axis: "x", context: "NET \(netName) route wildcard")
@@ -595,11 +663,13 @@ public enum DEFLibraryReader {
 
     // MARK: - SPECIALNETS
 
-    private static func parseSpecialNets(_ tokens: [String], from start: Int) throws -> ([DEFSpecialNet], Int) {
+    private static func parseSpecialNets(_ tokens: [String], from start: Int, strict: Bool,
+                                         isCancelled: () -> Bool) throws -> ([DEFSpecialNet], Int) {
         var i = start
         var snets: [DEFSpecialNet] = []
 
         while i < tokens.count {
+            try checkCancellation(isCancelled)
             if tokens[i].uppercased() == "END" {
                 i += 1
                 if i < tokens.count && tokens[i].uppercased() == "SPECIALNETS" { i += 1 }
@@ -609,11 +679,16 @@ public enum DEFLibraryReader {
                 i += 1
                 guard i < tokens.count else { break }
                 let name = tokens[i]; i += 1
+                if strict && name.uppercased() == "MUSTJOIN" {
+                    throw DEFError.unsupportedSourceFeature(context: "SPECIALNETS", feature: "MUSTJOIN")
+                }
                 var snet = DEFSpecialNet(name: name)
 
                 // Parse connections before + keywords
                 while i < tokens.count && tokens[i] == "(" {
+                    try checkCancellation(isCancelled)
                     i += 1
+                    if strict { try validateSourceConnection(tokens, at: i, context: "SPECIALNET \(name)") }
                     if i + 1 < tokens.count {
                         let comp = tokens[i]; i += 1
                         let pin = tokens[i]; i += 1
@@ -623,6 +698,7 @@ public enum DEFLibraryReader {
                 }
 
                 while i < tokens.count && tokens[i] != ";" {
+                    try checkCancellation(isCancelled)
                     if tokens[i] == "+" || tokens[i].uppercased() == "NEW" {
                         if tokens[i] == "+" { i += 1 }
                         guard i < tokens.count else { break }
@@ -631,6 +707,9 @@ public enum DEFLibraryReader {
                             i += 1
                             if i < tokens.count {
                                 snet.use = DEFSpecialNet.NetUse(rawValue: tokens[i].uppercased())
+                                if strict && snet.use == nil {
+                                    throw DEFError.invalidSourceSyntax(context: "SPECIALNET \(name) USE", expected: "represented NetUse", token: tokens[i])
+                                }
                                 i += 1
                             }
                         } else if kw == "ROUTED" || kw == "FIXED" || kw == "COVER" || kw == "SHIELD" || kw == "NEW" {
@@ -662,6 +741,7 @@ public enum DEFLibraryReader {
 
                                 var points: [DEFRoutePoint] = []
                                 while i < tokens.count && tokens[i] == "(" {
+                                    try checkCancellation(isCancelled)
                                     i += 1
                                     var pt = DEFRoutePoint()
                                     if i < tokens.count {
@@ -728,9 +808,18 @@ public enum DEFLibraryReader {
                             let (p, next) = parseProperties(tokens, from: i)
                             snet.properties = p; i = next
                         } else {
+                            // FIXME(INCOMPLETE_IMPLEMENTATION): Ordinary reads skip unretained special-net clauses.
+                            // Routed PEX reads require represented connectivity and geometry before acceptance.
+                            if strict {
+                                i = try skipSourceMetadata(tokens, at: i, context: "SPECIALNET \(name)")
+                                continue
+                            }
                             i += 1
                         }
                     } else {
+                        if strict {
+                            throw DEFError.unsupportedSourceFeature(context: "SPECIALNET \(name)", feature: tokens[i])
+                        }
                         i += 1
                     }
                 }
@@ -1190,6 +1279,29 @@ public enum DEFLibraryReader {
     }
 
     // MARK: - Helpers
+
+    private static func checkCancellation(_ isCancelled: () -> Bool) throws {
+        if isCancelled() { throw DEFError.cancelled }
+    }
+
+    private static func skipSourceMetadata(_ tokens: [String], at index: Int, context: String) throws -> Int {
+        let feature = tokens[index].uppercased()
+        guard ["SOURCE", "WEIGHT", "ESTCAP", "FREQUENCY", "XTALK", "ORIGINAL"].contains(feature) else {
+            throw DEFError.unsupportedSourceFeature(context: context, feature: feature)
+        }
+        guard index + 1 < tokens.count, !["+", ";", "(", ")"].contains(tokens[index + 1]) else {
+            throw DEFError.invalidSourceSyntax(context: context, expected: feature + " value", token: tokens.dropFirst(index + 1).first)
+        }
+        return index + 2
+    }
+
+    private static func validateSourceConnection(_ tokens: [String], at index: Int, context: String) throws {
+        guard index + 2 < tokens.count, tokens[index + 2] == ")",
+              !["(", ")", "+", ";"].contains(tokens[index]),
+              !["(", ")", "+", ";"].contains(tokens[index + 1]) else {
+            throw DEFError.invalidSourceSyntax(context: context, expected: "( component pin )", token: tokens.dropFirst(index).first)
+        }
+    }
 
     private static func parseInt32(_ tokens: [String], at index: Int, context: String) throws -> Int32 {
         guard index < tokens.count else {

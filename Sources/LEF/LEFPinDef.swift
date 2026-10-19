@@ -48,36 +48,3 @@ public struct LEFPinDef: Hashable, Sendable, Codable {
         self.properties = properties
     }
 }
-
-public struct LEFPort: Hashable, Sendable, Codable {
-    public var layerName: String
-    public var rects: [LEFRect]
-    public var polygons: [[LEFPoint]]
-    public var vias: [LEFPortVia]
-    public var portClass: PortClass?
-
-    public enum PortClass: String, Hashable, Sendable, Codable {
-        case none = "NONE"
-        case core = "CORE"
-        case bump = "BUMP"
-    }
-
-    public init(layerName: String, rects: [LEFRect], polygons: [[LEFPoint]] = [],
-                vias: [LEFPortVia] = [], portClass: PortClass? = nil) {
-        self.layerName = layerName
-        self.rects = rects
-        self.polygons = polygons
-        self.vias = vias
-        self.portClass = portClass
-    }
-}
-
-public struct LEFPortVia: Hashable, Sendable, Codable {
-    public var viaName: String
-    public var point: LEFPoint
-
-    public init(viaName: String, point: LEFPoint) {
-        self.viaName = viaName
-        self.point = point
-    }
-}

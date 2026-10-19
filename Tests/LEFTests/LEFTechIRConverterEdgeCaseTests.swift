@@ -141,8 +141,8 @@ struct LEFTechIRConverterEdgeCaseTests {
 
         let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
 
-        #expect(lib.enclosureRules.count == 1)
-        #expect(lib.enclosureRules[0].minEnclosure == 0.03) // min(0.03, 0.07)
+        #expect(lib.enclosureRules.isEmpty)
+        #expect(lib.layers[0].enclosures == [.init(overhang1: 0.03, overhang2: 0.07)])
     }
 
     // MARK: - Non-cut layer with enclosure produces no enclosure rule
@@ -158,8 +158,7 @@ struct LEFTechIRConverterEdgeCaseTests {
             ]
         )
 
-        let lib = try LEFTechIRConverter.toIRTechLibrary(doc)
-        #expect(lib.enclosureRules.isEmpty)
+        #expect(throws: LEFError.self) { _ = try LEFTechIRConverter.toIRTechLibrary(doc) }
     }
 
     // MARK: - Site with nil siteClass
