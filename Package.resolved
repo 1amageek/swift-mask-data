@@ -1,12 +1,13 @@
 {
-  "originHash" : "32645298f3e96b2830b5a4b793bf2ed394d120683c53b8960cef0e2faf693f17",
+  "originHash" : "6b6b87df76ec130c2774debf32467096542adfd161eb8983a176e0a40e59915b",
   "pins" : [
     {
       "identity" : "circuitefoundation",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/1amageek/CircuiteFoundation.git",
       "state" : {
-        "revision" : "5f132c58209123433e0e479e1ea61096e46061ba"
+        "revision" : "4d03b5a561c82a756aaf93860f657733371538dc",
+        "version" : "26.1021.0"
       }
     },
     {

@@ -67,7 +67,8 @@ The package requires Swift 6.3 or later and macOS 26 or later. See `DESIGN.md`,
 
 This snapshot preserves the implementation, tests, and resources at
 `83c926044838fe12f579bc9d2526a8e55899fa60`, with the public exact HTTPS
-CircuiteFoundation dependency `5f132c58209123433e0e479e1ea61096e46061ba`.
+CircuiteFoundation dependency exact `26.1021.0`, released at
+`4d03b5a561c82a756aaf93860f657733371538dc`.
 It retains the published MIT license for repository-owned code and preserves
 existing source, resource, and third-party notices. The license does not grant
 rights to external model, compiler, or process artifacts.
@@ -87,3 +88,11 @@ Qualification is limited to the original native TechIR, LEF, and DEF tests and
 subsequent consuming Layout admission controls. It does not qualify all mask
 formats, editor/Metal execution, or foundry signoff. No parser implementation,
 test assertion, fixture, or runtime limit is changed by this prerequisite.
+
+## Stable dependency successor preparation
+
+This candidate preserves public `67410f834bdfa8a098c2ec0bfe3675210f658277`
+implementation, tests, resources and licenses. Canonical HTTPS resolution selects
+CF exact `26.1021.0`; focused Native TechIR/LEF/DEF checks pass within the finite
+scope recorded in the [package contract](DESIGN.md#stable-dependency-successor-preparation).
+The seven original externally gated LEF checks are not new PDK evidence.
