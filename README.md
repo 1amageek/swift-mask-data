@@ -67,8 +67,8 @@ The package requires Swift 6.3 or later and macOS 26 or later. See `DESIGN.md`,
 
 This snapshot preserves the implementation, tests, and resources at
 `83c926044838fe12f579bc9d2526a8e55899fa60`, with the public exact HTTPS
-CircuiteFoundation dependency exact `26.1021.0`, released at
-`4d03b5a561c82a756aaf93860f657733371538dc`.
+CircuiteFoundation dependency exact `26.1021.1`, released at
+`7b5ab9cfcd89eccd04e98fb8355bd8ed4d5596c3`.
 It retains the published MIT license for repository-owned code and preserves
 existing source, resource, and third-party notices. The license does not grant
 rights to external model, compiler, or process artifacts.
@@ -91,8 +91,14 @@ test assertion, fixture, or runtime limit is changed by this prerequisite.
 
 ## Stable dependency successor preparation
 
-This candidate preserves public `67410f834bdfa8a098c2ec0bfe3675210f658277`
-implementation, tests, resources and licenses. Canonical HTTPS resolution selects
-CF exact `26.1021.0`; focused Native TechIR/LEF/DEF checks pass within the finite
-scope recorded in the [package contract](DESIGN.md#stable-dependency-successor-preparation).
-The seven original externally gated LEF checks are not new PDK evidence.
+This successor preserves public `d23f9afd9c049cf06a12e307e4c26b4dd3ad216d`
+implementation, tests, resources, licenses and file modes. Canonical HTTPS
+resolution selects CF exact `26.1021.1` at
+`7b5ab9cfcd89eccd04e98fb8355bd8ed4d5596c3`. The additive Foundation patch keeps
+the original initializer and absent-context coding behavior unchanged.
+
+Prior focused Native TechIR/LEF/DEF evidence is reused only for the unchanged
+implementation on its original `26.1021.0` graph; it is not a new runtime result
+on this successor graph. The seven original externally gated LEF checks are
+not new PDK evidence. See the [package contract](DESIGN.md#stable-dependency-successor-preparation)
+for validation scope. Consumers qualify integration on the resolved graph separately.
